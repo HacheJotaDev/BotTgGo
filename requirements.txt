@@ -1,11 +1,12 @@
-times
-Pyrogram
+telethon
+pyrogram
+telebot
+pyTelegramBotAPI
 requests
+colorama
 TgCrypto
 urllib3
 bs4
 httpcore
-pyrogram
 aiogram
 random_address
-asyncio

@@ -1,7 +1,7 @@
 """
-HJ SCAM BOT v7.0 - Simple & Clean
-Diseño con guiones y ➸, sin emojis premium
-Imagen + texto como caption juntos
+HJ SCAM BOT v7.1 - Clean design con formato
+Negrita, codigo, hashtags - con guiones y flechas
+Imagen + texto como caption con formato
 """
 import re
 import requests as http_requests
@@ -14,6 +14,8 @@ from os import system, path
 # ─── Imports ───────────────────────────────────────────────────────────────────
 try:
     from pyrogram import Client, filters
+    from pyrogram.types import MessageEntity
+    from pyrogram.enums import MessageEntityType
     print("[OK] Pyrogram importado")
 except ImportError:
     print("[FATAL] pip install pyrogram tgcrypto")
@@ -67,25 +69,95 @@ def ensure_image():
         print(f"[ERR] Imagen: {e}")
     return None
 
-# ─── Build message ─────────────────────────────────────────────────────────────
+# ─── UTF-16 offset helper ─────────────────────────────────────────────────────
+def u16len(s):
+    return len(s.encode("utf-16-le")) // 2
+
+# ─── Message Builder ──────────────────────────────────────────────────────────
+class MB:
+    def __init__(self):
+        self.t = ""
+        self.e = []
+
+    def add(self, text, bold=False, italic=False, code=False, hashtag=False):
+        off = u16len(self.t)
+        self.t += text
+        ln = u16len(text)
+        if ln == 0:
+            return self
+        if bold:
+            self.e.append(MessageEntity(type=MessageEntityType.BOLD, offset=off, length=ln))
+        if italic:
+            self.e.append(MessageEntity(type=MessageEntityType.ITALIC, offset=off, length=ln))
+        if code:
+            self.e.append(MessageEntity(type=MessageEntityType.CODE, offset=off, length=ln))
+        if hashtag:
+            self.e.append(MessageEntity(type=MessageEntityType.HASHTAG, offset=off, length=ln))
+        return self
+
+    def nl(self):
+        self.t += "\n"
+        return self
+
+    def sep(self):
+        self.add("- - - - - - - - - - - - - - - - - - - - - - - -")
+        return self.nl()
+
+    def build(self):
+        return self.t, self.e
+
+
 def build_hit(bin_n, cc, mm, yy, cvv, extra, brand, level, tipo, bank, country, flag):
-    sep1 = "- - - - - - - - - - - - - - - - - - - - - - - -"
-    sep2 = "- - - - - - - - - - - - - - - - - - - - - - - -"
-    sep3 = "- - - - - - - - - - - - - - - - - - - - - - - -"
-    msg = (
-        f"HJ SCAM #BIN{bin_n}\n"
-        f"{sep1}\n"
-        f"Cc ➸ {cc}|{mm}|{yy}|{cvv}\n"
-        f"Response ➸ Approved! ✅\n"
-        f"Extra ➸ {extra}xxxx|{mm}|{yy}|rnd\n"
-        f"{sep2}\n"
-        f"Info ➸ {brand} - {level} - {tipo}\n"
-        f"Bank ➸ {bank}\n"
-        f"Country ➸ {country} {flag}\n"
-        f"{sep3}\n"
-        f"Owner ➸ @hjofc20"
-    )
-    return msg
+    b = MB()
+    # HJ SCAM #BIN402348
+    b.add("HJ SCAM", bold=True, italic=True)
+    b.add(" ")
+    b.add(f"#BIN{bin_n}", hashtag=True)
+    b.nl()
+
+    b.sep()
+
+    # Cc ➸ data
+    b.add("Cc", bold=True)
+    b.add(" ➸ ")
+    b.add(f"{cc}|{mm}|{yy}|{cvv}", code=True)
+    b.nl()
+
+    # Response ➸ Approved!
+    b.add("Response", bold=True)
+    b.add(" ➸ Approved! ✅")
+    b.nl()
+
+    # Extra ➸ data
+    b.add("Extra", bold=True)
+    b.add(" ➸ ")
+    b.add(f"{extra}xxxx|{mm}|{yy}|rnd", code=True)
+    b.nl()
+
+    b.sep()
+
+    # Info ➸ ...
+    b.add("Info", bold=True)
+    b.add(f" ➸ {brand} - {level} - {tipo}")
+    b.nl()
+
+    # Bank ➸ ...
+    b.add("Bank", bold=True)
+    b.add(f" ➸ {bank}")
+    b.nl()
+
+    # Country ➸ ...
+    b.add("Country", bold=True)
+    b.add(f" ➸ {country} {flag}")
+    b.nl()
+
+    b.sep()
+
+    # Owner ➸ @hjofc20
+    b.add("Owner", bold=True)
+    b.add(" ➸ @hjofc20")
+
+    return b.build()
 
 # ─── Verificar duplicado ──────────────────────────────────────────────────────
 def verificar(ccn):
@@ -102,22 +174,24 @@ tel_client = None
 tel_ok = False
 
 # ─── Send to channel ───────────────────────────────────────────────────────────
-async def send_hit_to_channel(text, img_path=None):
-    """Enviar imagen+caption al canal como un solo mensaje"""
+async def send_hit_to_channel(text, entities, img_path=None):
+    """Enviar imagen+caption con formato al canal"""
     try:
         if img_path and path.isfile(img_path):
-            await bot.send_photo(CHAN_ID, img_path, caption=text)
+            await bot.send_photo(CHAN_ID, img_path, caption=text, caption_entities=entities)
             print("[OK] Foto+caption enviado al canal")
         else:
-            await bot.send_message(CHAN_ID, text)
+            await bot.send_message(CHAN_ID, text, entities=entities)
             print("[OK] Texto enviado al canal")
         return True
     except Exception as e:
-        print(f"[ERR] Envio al canal: {e}")
-        # Fallback sin imagen
+        print(f"[ERR] Envio canal: {e}")
         try:
-            await bot.send_message(CHAN_ID, text)
-            print("[WARN] Enviado sin imagen (fallback)")
+            if img_path and path.isfile(img_path):
+                await bot.send_photo(CHAN_ID, img_path, caption=text)
+            else:
+                await bot.send_message(CHAN_ID, text)
+            print("[WARN] Enviado sin formato (fallback)")
             return True
         except Exception as e2:
             print(f"[ERR] Fallback: {e2}")
@@ -128,7 +202,7 @@ async def send_hit_to_channel(text, img_path=None):
 @bot.on_message(filters.command("start") & filters.private)
 async def cmd_start(c, m):
     tel_status = "Conectado" if tel_ok else "Desconectado"
-    await m.reply(f"Bot activo! v7.0\nTelethon: {tel_status}\nComandos: /status /testimg /connect /update /restart")
+    await m.reply(f"Bot activo! v7.1\nTelethon: {tel_status}\nComandos: /status /testimg /connect /update /restart")
 
 @bot.on_message(filters.command("status") & filters.private)
 async def cmd_status(c, m):
@@ -141,17 +215,17 @@ async def cmd_status(c, m):
         commit = "?"
     img = "OK" if path.isfile(IMG_PATH) and path.getsize(IMG_PATH) > 500 else "Fallback"
     tel = "Conectado" if tel_ok else "Desconectado"
-    await m.reply(f"Bot v7.0\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nDir: {SCRIPT_DIR}")
+    await m.reply(f"Bot v7.1\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nDir: {SCRIPT_DIR}")
 
 @bot.on_message(filters.command("testimg") & filters.private)
 async def cmd_testimg(c, m):
     if m.from_user.id != OWNER_ID:
         return
     await m.reply("Enviando prueba al canal...")
-    msg = build_hit("411111", "4111111111111111", "12", "2026", "123",
-                    "411111111111", "VISA", "CLASSIC", "CREDIT", "TEST BANK", "US", "\U0001F1FA\U0001F1F8")
+    txt, ent = build_hit("411111", "4111111111111111", "12", "2026", "123",
+                         "411111111111", "VISA", "CLASSIC", "CREDIT", "TEST BANK", "US", "\U0001F1FA\U0001F1F8")
     img = ensure_image()
-    ok = await send_hit_to_channel(msg, img)
+    ok = await send_hit_to_channel(txt, ent, img)
     if ok:
         await m.reply("Enviado al canal!")
     else:
@@ -283,11 +357,11 @@ async def _start_telethon():
             except:
                 country, flag, bank, brand, tipo, level = "??", "\U0001F3F3", "Unknown", "Unknown", "Unknown", "Unknown"
 
-            msg = build_hit(bin_n, cc, mm, yy, cvv, cc[:12], brand, level, tipo, bank, country, flag)
+            txt, ent = build_hit(bin_n, cc, mm, yy, cvv, cc[:12], brand, level, tipo, bank, country, flag)
             print(f"[HIT] {cc}|{mm}|{yy}|{cvv} {country}")
 
             img = ensure_image()
-            await send_hit_to_channel(msg, img)
+            await send_hit_to_channel(txt, ent, img)
 
         tel_ok = True
         print("[OK] Escuchando hits...")
@@ -301,7 +375,7 @@ async def _start_telethon():
 if __name__ == "__main__":
     ensure_image()
     print("=" * 40)
-    print("HJ SCAM BOT v7.0")
-    print("Simple & Clean")
+    print("HJ SCAM BOT v7.1")
+    print("Clean + Formato")
     print("=" * 40)
     bot.run()

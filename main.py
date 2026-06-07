@@ -1,11 +1,12 @@
 """
-HJ SCAM BOT v8.7 - Pyrogram + Telethon
-Fix: usar send_photo con caption + caption_entities para canal
-Los emojis premium funcionan en privado pero NO en canales con send_message solo.
-Solucion: enviar foto+texto como un solo mensaje con caption_entities.
+HJ SCAM BOT v8.8 - Pyrogram + Telethon + Raw API
+Fix: usar HTTP API directa de Telegram para enviar custom_emoji al canal.
+Pyrogram funciona para privado pero no para canales con custom emoji.
+La API cruda de Telegram (/sendMessage con entities JSON) SI funciona en canales.
 """
 import re
-import requests
+import requests as http_requests
+import json
 import asyncio
 import os
 import subprocess
@@ -42,6 +43,7 @@ API_HASH   = "1d388952a2f1f03de04a4b94f64eb6ed"
 BOT_TOKEN  = "8594813440:AAFFKfWwup01Si1C-exXIN2InTABuKgRv7g"
 CHAN_ID    = -1003127906650
 OWNER_ID   = 5947916142
+TG_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 SCRIPT_DIR = path.dirname(path.abspath(__file__))
 IMG_PATH   = path.join(SCRIPT_DIR, "nueva_img.jpg")
@@ -74,7 +76,7 @@ def ensure_image():
         if path.isfile(p) and path.getsize(p) > 500:
             return p
     try:
-        r = requests.get(IMG_URL, timeout=20)
+        r = http_requests.get(IMG_URL, timeout=20)
         if r.status_code == 200 and len(r.content) > 500:
             with open(IMG_PATH, "wb") as f:
                 f.write(r.content)
@@ -100,15 +102,20 @@ class MB:
         if ln == 0:
             return self
         if emoji:
-            self.e.append(MessageEntity(type=MessageEntityType.CUSTOM_EMOJI, offset=off, length=ln, custom_emoji_id=emoji))
+            self.e.append({
+                "type": "custom_emoji",
+                "offset": off,
+                "length": ln,
+                "custom_emoji_id": str(emoji)
+            })
         if bold:
-            self.e.append(MessageEntity(type=MessageEntityType.BOLD, offset=off, length=ln))
+            self.e.append({"type": "bold", "offset": off, "length": ln})
         if italic:
-            self.e.append(MessageEntity(type=MessageEntityType.ITALIC, offset=off, length=ln))
+            self.e.append({"type": "italic", "offset": off, "length": ln})
         if code:
-            self.e.append(MessageEntity(type=MessageEntityType.CODE, offset=off, length=ln))
+            self.e.append({"type": "code", "offset": off, "length": ln})
         if hashtag:
-            self.e.append(MessageEntity(type=MessageEntityType.HASHTAG, offset=off, length=ln))
+            self.e.append({"type": "hashtag", "offset": off, "length": ln})
         return self
 
     def n(self):
@@ -155,6 +162,103 @@ def build_emoji_test():
     b.sep()
     return b.build()
 
+
+# ─── Raw Telegram API Send ────────────────────────────────────────────────────
+def _convert_entities_for_pyrogram(entities):
+    """Convert raw dict entities to Pyrogram MessageEntity objects for private chat"""
+    result = []
+    for e in entities:
+        if e["type"] == "custom_emoji":
+            result.append(MessageEntity(
+                type=MessageEntityType.CUSTOM_EMOJI,
+                offset=e["offset"],
+                length=e["length"],
+                custom_emoji_id=int(e["custom_emoji_id"])
+            ))
+        elif e["type"] == "bold":
+            result.append(MessageEntity(type=MessageEntityType.BOLD, offset=e["offset"], length=e["length"]))
+        elif e["type"] == "italic":
+            result.append(MessageEntity(type=MessageEntityType.ITALIC, offset=e["offset"], length=e["length"]))
+        elif e["type"] == "code":
+            result.append(MessageEntity(type=MessageEntityType.CODE, offset=e["offset"], length=e["length"]))
+        elif e["type"] == "hashtag":
+            result.append(MessageEntity(type=MessageEntityType.HASHTAG, offset=e["offset"], length=e["length"]))
+    return result
+
+
+def api_send_message(chat_id, text, entities):
+    """Enviar mensaje con custom_emoji usando HTTP API directa de Telegram"""
+    url = f"{TG_API_URL}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": text,
+        "entities": json.dumps(entities),
+        "parse_mode": ""
+    }
+    try:
+        r = http_requests.post(url, data=data, timeout=10)
+        result = r.json()
+        if result.get("ok"):
+            print(f"[OK] API directa: mensaje enviado ok")
+            return True
+        else:
+            print(f"[ERR] API directa: {result.get('description', 'unknown error')}")
+            return False
+    except Exception as e:
+        print(f"[ERR] API directa exception: {e}")
+        return False
+
+
+def api_send_photo(chat_id, photo_path, caption, caption_entities):
+    """Enviar foto con caption+custom_emoji usando HTTP API directa"""
+    url = f"{TG_API_URL}/sendPhoto"
+    try:
+        with open(photo_path, "rb") as f:
+            data = {
+                "chat_id": chat_id,
+                "caption": caption,
+                "caption_entities": json.dumps(caption_entities),
+                "parse_mode": ""
+            }
+            files = {"photo": f}
+            r = http_requests.post(url, data=data, files=files, timeout=15)
+            result = r.json()
+            if result.get("ok"):
+                print(f"[OK] API directa: foto+caption enviado ok")
+                return True
+            else:
+                print(f"[ERR] API directa foto: {result.get('description', 'unknown error')}")
+                return False
+    except Exception as e:
+        print(f"[ERR] API directa foto exception: {e}")
+        return False
+
+
+async def send_hit_to_channel(txt, ent, img_path=None):
+    """
+    Enviar hit al canal con emojis premium usando API directa de Telegram.
+    Primero intenta foto+caption, luego texto solo.
+    """
+    # Intentar foto + caption con premium
+    if img_path and path.isfile(img_path):
+        ok = api_send_photo(CHAN_ID, img_path, txt, ent)
+        if ok:
+            return True
+        print("[WARN] Foto fallo, intentando texto solo...")
+
+    # Texto solo con premium
+    ok = api_send_message(CHAN_ID, txt, ent)
+    if ok:
+        return True
+
+    # Fallback sin entities
+    print("[WARN] Premium fallo, enviando sin entities...")
+    try:
+        ok = api_send_message(CHAN_ID, txt, [])
+        return ok
+    except:
+        return False
+
 # ─── Verificar duplicado ──────────────────────────────────────────────────────
 def verificar(ccn):
     try:
@@ -162,44 +266,6 @@ def verificar(ccn):
             return ccn in f.read()
     except FileNotFoundError:
         return False
-
-# ─── Send to channel helper ───────────────────────────────────────────────────
-async def send_hit_to_channel(txt, ent, img_path=None):
-    """
-    Enviar hit al canal con emojis premium.
-    Usa send_photo con caption + caption_entities para que los premium funcionen en canales.
-    Si no hay imagen, usa send_message con entities como fallback.
-    """
-    try:
-        if img_path and path.isfile(img_path):
-            print(f"[..] Enviando foto+caption premium al canal {CHAN_ID}...")
-            msg = await bot.send_photo(
-                CHAN_ID,
-                img_path,
-                caption=txt,
-                caption_entities=ent
-            )
-            print(f"[OK] Foto+premium enviado al canal! msg_id={msg.id}")
-            return True
-        else:
-            # Sin imagen - enviar texto solo con entities
-            print(f"[..] Enviando texto premium al canal {CHAN_ID}...")
-            msg = await bot.send_message(CHAN_ID, txt, entities=ent)
-            print(f"[OK] Texto premium enviado al canal! msg_id={msg.id}")
-            return True
-    except Exception as e:
-        print(f"[ERR] Envio premium fallo: {e}")
-        # Fallback: intentar sin entities
-        try:
-            if img_path and path.isfile(img_path):
-                await bot.send_photo(CHAN_ID, img_path, caption=txt)
-            else:
-                await bot.send_message(CHAN_ID, txt)
-            print("[WARN] Enviado sin premium (fallback)")
-            return True
-        except Exception as e2:
-            print(f"[ERR] Fallback tambien fallo: {e2}")
-            return False
 
 # ─── Clients ───────────────────────────────────────────────────────────────────
 bot = Client("premium_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -212,7 +278,7 @@ tel_ok = False
 @bot.on_message(filters.command("start") & filters.private)
 async def cmd_start(c, m):
     tel_status = "Conectado" if tel_ok else "Desconectado"
-    await m.reply(f"Bot activo! v8.7\nTelethon: {tel_status}\nComandos: /status /emojis /testimg /connect /update /restart")
+    await m.reply(f"Bot activo! v8.8\nTelethon: {tel_status}\nComandos: /status /emojis /emojischan /testimg /connect /update /restart")
 
 @bot.on_message(filters.command("status") & filters.private)
 async def cmd_status(c, m):
@@ -226,25 +292,26 @@ async def cmd_status(c, m):
     img = "OK" if path.isfile(IMG_PATH) and path.getsize(IMG_PATH) > 500 else "Fallback"
     tel = "Conectado" if tel_ok else "Desconectado"
     ses = "Si" if path.isfile(TEL_SESSION + ".session") else "NO"
-    ses_size = path.getsize(TEL_SESSION + ".session") if path.isfile(TEL_SESSION + ".session") else 0
-    await m.reply(f"Bot v8.7\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nSession: {ses} ({ses_size} bytes)\nDir: {SCRIPT_DIR}")
+    await m.reply(f"Bot v8.8\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nSession: {ses}\nDir: {SCRIPT_DIR}")
 
 @bot.on_message(filters.command("emojis") & filters.private)
 async def cmd_emojis(c, m):
+    """Test emojis premium en chat privado (usa Pyrogram)"""
     if m.from_user.id != OWNER_ID:
         return
     txt, ent = build_emoji_test()
+    pyro_ent = _convert_entities_for_pyrogram(ent)
     try:
-        await c.send_message(m.chat.id, txt, entities=ent)
+        await c.send_message(m.chat.id, txt, entities=pyro_ent)
     except Exception as e:
         await m.reply(f"Error: {e}")
 
 @bot.on_message(filters.command("emojischan") & filters.private)
 async def cmd_emojischan(c, m):
-    """Testear emojis premium en el canal"""
+    """Test emojis premium en el canal (usa API directa)"""
     if m.from_user.id != OWNER_ID:
         return
-    await m.reply("Enviando test de emojis al canal...")
+    await m.reply("Enviando test de emojis al canal (API directa)...")
     txt, ent = build_emoji_test()
     ok = await send_hit_to_channel(txt, ent)
     if ok:
@@ -256,35 +323,29 @@ async def cmd_emojischan(c, m):
 async def cmd_testimg(c, m):
     if m.from_user.id != OWNER_ID:
         return
-    await m.reply("Enviando prueba al canal...")
+    await m.reply("Enviando prueba completa al canal...")
     txt, ent = build_hit("411111", "4111111111111111", "12", "2026", "123",
                          "411111111111", "VISA", "CLASSIC", "CREDIT", "TEST BANK", "US", "\U0001F1FA\U0001F1F8")
     img = ensure_image()
     ok = await send_hit_to_channel(txt, ent, img)
     if ok:
-        await m.reply("Enviado al canal! Verifica si se ven premium.")
+        await m.reply("Enviado al canal! Verifica premium emojis.")
     else:
         await m.reply("Error al enviar al canal.")
 
 @bot.on_message(filters.command("connect") & filters.private)
 async def cmd_connect(c, m):
-    """Conectar Telethon manualmente"""
     if m.from_user.id != OWNER_ID:
         return
     if tel_ok:
         await m.reply("Telethon ya esta conectado!")
         return
-    await m.reply("Intentando conectar Telethon...")
+    await m.reply("Conectando Telethon...")
     await _start_telethon()
     if tel_ok:
         await m.reply("Telethon conectado! Escuchando hits...")
     else:
-        session_file = TEL_SESSION + ".session"
-        if not path.isfile(session_file):
-            await m.reply("No hay archivo de sesion. Ejecuta en SSH:\n" +
-                          f"cd {SCRIPT_DIR} && {sys.executable} -c \"from telethon.sync import TelegramClient; TelegramClient('anon',{API_ID},'{API_HASH}').start()\"")
-        else:
-            await m.reply("Telethon fallo. Ver logs: journalctl -u bot-tg -n 20")
+        await m.reply("Telethon fallo. Ver logs.")
 
 @bot.on_message(filters.command("update") & filters.private)
 async def cmd_update(c, m):
@@ -391,7 +452,7 @@ async def _start_telethon():
 
             bin_n = cc[:6]
             try:
-                rs = requests.get(f"https://bins.antipublic.cc/bins/{bin_n}").json()
+                rs = http_requests.get(f"https://bins.antipublic.cc/bins/{bin_n}").json()
                 country = rs.get("country", "??")
                 flag = rs.get("country_flag", "\U0001F3F3")
                 bank = rs.get("bank", "Unknown")
@@ -404,7 +465,7 @@ async def _start_telethon():
             txt, ent = build_hit(bin_n, cc, mm, yy, cvv, cc[:12], brand, level, tipo, bank, country, flag)
             print(f"[HIT] {cc}|{mm}|{yy}|{cvv} {country}")
 
-            # Enviar usando helper (foto+caption con premium)
+            # Enviar al canal usando API directa
             img = ensure_image()
             await send_hit_to_channel(txt, ent, img)
 
@@ -420,8 +481,8 @@ async def _start_telethon():
 if __name__ == "__main__":
     ensure_image()
     print("=" * 40)
-    print("HJ SCAM BOT v8.7")
-    print("Pyrogram + Telethon")
+    print("HJ SCAM BOT v8.8")
+    print("API directa para canales")
     print("=" * 40)
     print("[..] Iniciando bot.run()...")
     bot.run()

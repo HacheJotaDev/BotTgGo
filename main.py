@@ -1,7 +1,6 @@
 """
 HJ SCAM BOT v8.5 - Pyrogram + Telethon
-Telethon arranca automaticamente si existe sesion
-Handlers se registran DESPUES de conectar
+Telethon handlers se registran DESPUES de iniciar el cliente
 """
 import re
 import requests
@@ -23,11 +22,9 @@ except ImportError:
 
 try:
     from telethon import TelegramClient, events
-    HAS_TELETHON = True
     print("[OK] Telethon importado")
 except ImportError:
-    HAS_TELETHON = False
-    print("[WARN] Telethon no disponible")
+    print("[WARN] Telethon no disponible - sin escuchar hits")
 
 try:
     from colorama import Fore, init
@@ -48,12 +45,7 @@ IMG_PATH   = path.join(SCRIPT_DIR, "nueva_img.jpg")
 IMG_FALL   = path.join(SCRIPT_DIR, "hj.jpg")
 IMG_URL    = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
 TARJ_FILE  = path.join(SCRIPT_DIR, "tarjetas.txt")
-
-# Buscar sesion Telethon en multiples ubicaciones
-TEL_SESSION_PATHS = [
-    path.join(SCRIPT_DIR, "anon"),
-    path.join(SCRIPT_DIR, "sessions", "anon"),
-]
+TEL_SESSION = path.join(SCRIPT_DIR, "anon")
 
 # ─── Custom Emoji IDs ─────────────────────────────────────────────────────────
 CHAT_EMOJI  = 5427181942934088912   # 💬 premium
@@ -63,6 +55,7 @@ GLOBE_EMOJI = 5879585266426973039   # 🌐 premium
 HOUSE_EMOJI = 5967822972931542886   # 🏠 premium
 NOTE_EMOJI  = 5877597667231534929   # 🗒 premium
 
+# Unicode chars
 U_CHAT  = "\U0001f4ac"
 U_CARD  = "\U0001f4b3"
 U_ARROW = "\u23e9\ufe0f"
@@ -170,141 +163,19 @@ def verificar(ccn):
 # ─── Pyrogram Bot ─────────────────────────────────────────────────────────────
 bot = Client("premium_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Estado global
+# Telethon globals
 tel_client = None
 tel_ok = False
-
-
-# ─── Telethon Hit Handler ─────────────────────────────────────────────────────
-async def _hit_handler(event):
-    """Se ejecuta cuando Telethon detecta un hit en un canal"""
-    text = event.raw_text
-    responses = [
-        'Approved', 'Non VBV', 'Gateway Rejected: avs',
-        'Succeeded!', 'APPROVED', 'Approved CCN',
-        'Approved #AUTH!', 'Appr0ved',
-        'Security code incorrect', 'CVV2 FAILURE POSSIBLE CVV',
-        'Subscription complete', 'CVV LIVE',
-        'Card Approved CCN/CCV Live', 'incorrect_cvc',
-        'Approved!', 'VIVA'
-    ]
-    if not any(r in text for r in responses):
-        return
-
-    x = re.findall(r'\d+', text)
-    if len(x) < 4:
-        return
-
-    cc, mm, yy, cvv = x[0], x[1], x[2], x[3]
-    if len(cc) > 16 or len(cc) < 15:
-        return
-    if len(mm) > 2:
-        return
-    if len(yy) > 4:
-        return
-    if len(cvv) > 4:
-        return
-
-    if mm.startswith('2'):
-        mm, yy = yy, mm
-    if len(mm) >= 3:
-        mm, yy, cvv = yy, cvv, mm
-    if len(yy) == 2:
-        yy = '20' + yy
-
-    if verificar(cc):
-        return
-
-    with open(TARJ_FILE, 'a') as d:
-        d.write(f"{cc}|{mm}|{yy}|{cvv}\n")
-
-    bin_n = cc[:6]
-    try:
-        rs = requests.get(f"https://bins.antipublic.cc/bins/{bin_n}").json()
-        country = rs.get("country", "??")
-        flag = rs.get("country_flag", "\U0001F3F3")
-        bank = rs.get("bank", "Unknown")
-        brand = rs.get("brand", "Unknown")
-        tipo = rs.get("type", "Unknown")
-        level = rs.get("level", "Unknown")
-    except:
-        country, flag, bank, brand, tipo, level = "??", "\U0001F3F3", "Unknown", "Unknown", "Unknown", "Unknown"
-
-    txt, ent = build_hit(bin_n, cc, mm, yy, cvv, cc[:12], brand, level, tipo, bank, country, flag)
-    print(f"[HIT] {cc}|{mm}|{yy}|{cvv} {country}")
-
-    try:
-        img = ensure_image()
-        if img and path.isfile(img):
-            await bot.send_photo(CHAN_ID, img)
-        await bot.send_message(CHAN_ID, txt, entities=ent)
-        print("[OK] Enviado con premium al canal")
-    except Exception as e:
-        print(f"[ERR] Pyrogram send: {e}")
-        try:
-            await bot.send_message(CHAN_ID, txt)
-            print("[WARN] Enviado sin premium")
-        except Exception as e2:
-            print(f"[ERR] Fallback: {e2}")
-
-
-# ─── Iniciar Telethon ─────────────────────────────────────────────────────────
-def _find_telethon_session():
-    """Buscar sesion de Telethon en todas las ubicaciones posibles"""
-    for sess in TEL_SESSION_PATHS:
-        if path.isfile(sess + ".session"):
-            sz = path.getsize(sess + ".session")
-            if sz > 100:
-                print(f"[OK] Sesion Telethon encontrada: {sess}.session ({sz} bytes)")
-                return sess
-            else:
-                print(f"[WARN] Sesion vacia: {sess}.session ({sz} bytes)")
-    # Buscar cualquier .session en el dir
-    for f in os.listdir(SCRIPT_DIR):
-        if f.endswith(".session") and f != "premium_bot.session":
-            sz = path.getsize(path.join(SCRIPT_DIR, f))
-            if sz > 100:
-                sess = path.join(SCRIPT_DIR, f[:-8])  # quitar .session
-                print(f"[OK] Sesion alternativa: {f} ({sz} bytes)")
-                return sess
-    return None
-
-
-async def _start_telethon():
-    """Iniciar Telethon y registrar handlers"""
-    global tel_client, tel_ok
-
-    if not HAS_TELETHON:
-        print("[WARN] Telethon no instalado")
-        return
-
-    session_path = _find_telethon_session()
-    if not session_path:
-        print("[WARN] No hay sesion de Telethon. Hits desactivados.")
-        print("[TIP] Para activar: ejecuta manualmente una vez para crear sesion:")
-        print(f"[TIP]   cd {SCRIPT_DIR} && python3 -c \"from telethon.sync import TelegramClient; TelegramClient('anon',{API_ID},'{API_HASH}').start()\"")
-        return
-
-    try:
-        tel_client = TelegramClient(session_path, API_ID, API_HASH)
-        await tel_client.start()
-        tel_ok = True
-
-        # Registrar handlers DESPUES de conectar
-        tel_client.add_event_handler(_hit_handler, events.NewMessage())
-        tel_client.add_event_handler(_hit_handler, events.MessageEdited())
-
-        print("[OK] Telethon conectado + handlers registrados - escuchando hits")
-    except Exception as e:
-        print(f"[WARN] Telethon fallo: {e}")
-        tel_client = None
-
 
 # ─── Comandos Pyrogram ────────────────────────────────────────────────────────
 
 @bot.on_message(filters.command("start") & filters.private)
 async def cmd_start(c, m):
-    await m.reply("Bot activo! v8.5\nComandos: /status /emojis /testimg /update /restart")
+    tel_status = "Conectado" if tel_ok else "Desconectado"
+    await m.reply(f"Bot activo! v8.5\nTelethon: {tel_status}\n/status /emojis /testimg /update /restart")
+    # Intentar iniciar Telethon si no esta conectado
+    if not tel_ok:
+        asyncio.ensure_future(_start_telethon())
 
 @bot.on_message(filters.command("status") & filters.private)
 async def cmd_status(c, m):
@@ -317,7 +188,9 @@ async def cmd_status(c, m):
         commit = "?"
     img = "OK" if path.isfile(IMG_PATH) and path.getsize(IMG_PATH) > 500 else "Fallback"
     tel = "Conectado" if tel_ok else "Desconectado"
-    await m.reply(f"Bot v8.5\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nDir: {SCRIPT_DIR}")
+    # Verificar si session file existe
+    ses = "Si" if path.isfile(TEL_SESSION + ".session") else "NO"
+    await m.reply(f"Bot v8.5\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nSession file: {ses}\nDir: {SCRIPT_DIR}")
 
 @bot.on_message(filters.command("emojis") & filters.private)
 async def cmd_emojis(c, m):
@@ -341,7 +214,7 @@ async def cmd_testimg(c, m):
         if img and path.isfile(img):
             await c.send_photo(CHAN_ID, img)
         await c.send_message(CHAN_ID, txt, entities=ent)
-        await m.reply("Enviado al canal!")
+        await m.reply("Enviado al canal con premium!")
     except Exception as e:
         await m.reply(f"Error: {e}")
 
@@ -375,60 +248,131 @@ async def cmd_restart(c, m):
     await m.reply("Reiniciando...")
     subprocess.Popen(["sudo", "systemctl", "restart", "bot-tg"])
 
-@bot.on_message(filters.command("telethon") & filters.private)
-async def cmd_telethon(c, m):
-    """Forzar inicio de Telethon"""
-    if m.from_user.id != OWNER_ID:
+
+# ─── Telethon: iniciar y registrar handlers ───────────────────────────────────
+async def _start_telethon():
+    global tel_client, tel_ok
+
+    session_file = TEL_SESSION + ".session"
+    if not path.isfile(session_file):
+        print(f"[WARN] No existe sesion Telethon: {session_file}")
+        print("[WARN] Necesitas crear la sesion. Ejecuta en SSH:")
+        print(f"[WARN]   cd {SCRIPT_DIR} && {sys.executable} -c \"from telethon.sync import TelegramClient; TelegramClient('anon',{API_ID},'{API_HASH}').start()\"")
         return
+
+    if path.getsize(session_file) < 50:
+        print(f"[WARN] Sesion Telethon vacia/basura")
+        return
+
+    try:
+        tel_client = TelegramClient(TEL_SESSION, API_ID, API_HASH)
+        await tel_client.start()
+        tel_ok = True
+        print("[OK] Telethon conectado")
+
+        # REGISTRAR HANDLERS DESPUES de que el cliente existe
+        _register_hit_handlers()
+
+        print("[OK] Escuchando hits en canales...")
+    except Exception as e:
+        print(f"[WARN] Telethon fallo: {e}")
+        tel_client = None
+
+
+def _register_hit_handlers():
+    """Registrar handlers de Telethon - SOLO despues de iniciar el cliente"""
+    global tel_client
+    if not tel_client or not tel_ok:
+        return
+
+    @tel_client.on(events.NewMessage)
+    @tel_client.on(events.MessageEdited)
+    async def hit_handler(event):
+        text = event.raw_text
+        responses = [
+            'Approved', 'Non VBV', 'Gateway Rejected: avs',
+            'Succeeded!', 'APPROVED', 'Approved CCN',
+            'Approved #AUTH!', 'Appr0ved',
+            'Security code incorrect', 'CVV2 FAILURE POSSIBLE CVV',
+            'Subscription complete', 'CVV LIVE',
+            'Card Approved CCN/CCV Live', 'incorrect_cvc',
+            'Approved!', 'VIVA'
+        ]
+        if not any(r in text for r in responses):
+            return
+
+        x = re.findall(r'\d+', text)
+        if len(x) < 4:
+            return
+
+        cc, mm, yy, cvv = x[0], x[1], x[2], x[3]
+        if len(cc) > 16 or len(cc) < 15:
+            return
+        if len(mm) > 2:
+            return
+        if len(yy) > 4:
+            return
+        if len(cvv) > 4:
+            return
+
+        if mm.startswith('2'):
+            mm, yy = yy, mm
+        if len(mm) >= 3:
+            mm, yy, cvv = yy, cvv, mm
+        if len(yy) == 2:
+            yy = '20' + yy
+
+        if verificar(cc):
+            return
+
+        with open(TARJ_FILE, 'a') as d:
+            d.write(f"{cc}|{mm}|{yy}|{cvv}\n")
+
+        bin_n = cc[:6]
+        try:
+            rs = requests.get(f"https://bins.antipublic.cc/bins/{bin_n}").json()
+            country = rs.get("country", "??")
+            flag = rs.get("country_flag", "\U0001F3F3")
+            bank = rs.get("bank", "Unknown")
+            brand = rs.get("brand", "Unknown")
+            tipo = rs.get("type", "Unknown")
+            level = rs.get("level", "Unknown")
+        except:
+            country, flag, bank, brand, tipo, level = "??", "\U0001F3F3", "Unknown", "Unknown", "Unknown", "Unknown"
+
+        txt, ent = build_hit(bin_n, cc, mm, yy, cvv, cc[:12], brand, level, tipo, bank, country, flag)
+        print(f"[HIT] {cc}|{mm}|{yy}|{cvv} {country}")
+
+        try:
+            img = ensure_image()
+            if img and path.isfile(img):
+                await bot.send_photo(CHAN_ID, img)
+            await bot.send_message(CHAN_ID, txt, entities=ent)
+            print("[OK] Enviado con premium al canal")
+        except Exception as e:
+            print(f"[ERR] Pyrogram: {e}")
+            try:
+                await bot.send_message(CHAN_ID, txt)
+                print("[WARN] Enviado sin premium")
+            except Exception as e2:
+                print(f"[ERR] Fallback: {e2}")
+
+
+# ─── Auto-start Telethon al iniciar el bot ────────────────────────────────────
+@bot.on_raw_update()
+async def on_startup(client, update, users, chats):
+    """Se ejecuta cuando Pyrogram recibe su primera actualizacion"""
     global tel_ok
-    if tel_ok:
-        await m.reply("Telethon ya esta conectado.")
-        return
-    await m.reply("Iniciando Telethon...")
-    await _start_telethon()
-    if tel_ok:
-        await m.reply("Telethon conectado! Escuchando hits.")
-    else:
-        await m.reply("Telethon fallo. Revisa los logs.")
+    if not tel_ok:
+        await _start_telethon()
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    img = ensure_image()
-    if img:
-        print(f"[OK] Imagen lista")
+    ensure_image()
     print("=" * 40)
     print("HJ SCAM BOT v8.5")
-    print("Pyrogram + Emojis Premium")
-    print("Comandos: /start /status /emojis")
-    print("  /testimg /update /restart /telethon")
+    print("Pyrogram con emojis premium")
     print("=" * 40)
-
-    # Iniciar Telethon automaticamente si hay sesion
-    # Se hace como tarea de fondo despues de que bot.run() arranque Pyrogram
-    async def _auto_start():
-        await asyncio.sleep(3)  # Esperar a que Pyrogram estabilice
-        print("[..] Auto-iniciando Telethon...")
-        await _start_telethon()
-
-    # Registrar la tarea de auto-start como callback de Pyrogram
-    @bot.on_disconnect()
-    async def on_disconnect(c):
-        print("[WARN] Pyrogram desconectado")
-
-    # Usar on_startup para iniciar Telethon cuando Pyrogram este listo
-    # Pyrogram 2.0 no tiene on_startup, usamos el primer comando
-    # Pero intentamos iniciar Telethon como tarea de fondo
-    original_start = bot.start
-
-    async def patched_start():
-        result = await original_start()
-        print("[OK] Pyrogram bot conectado")
-        # Iniciar Telethon como tarea de fondo
-        asyncio.ensure_future(_auto_start())
-        return result
-
-    bot.start = patched_start
-
     print("[..] Iniciando bot.run()...")
     bot.run()

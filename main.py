@@ -32,8 +32,11 @@ IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
 IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
 
 # ─── Custom Emoji IDs (premium) ───────────────────────────────────────────────
-# 💬 emoji premium — ID del custom emoji
-EMOJI_CHAT_ID = "5427181942934088912"
+EMOJI_CHAT_ID = "5427181942934088912"     # 💬 premium
+EMOJI_CARD_ID = "5927169041595634481"     # 💳 premium
+
+# ⏩️ es emoji normal, NO premium — se usa directo sin tg-emoji
+ARROW = "\u23e9\ufe0f"  # ⏩️
 
 def ce(emoji_id, fallback):
     """Genera tag tg-emoji para emojis premium personalizados."""
@@ -41,6 +44,7 @@ def ce(emoji_id, fallback):
 
 # Atajos de emojis premium
 CHAT = ce(EMOJI_CHAT_ID, "\U0001f4ac")  # 💬 premium
+CARD = ce(EMOJI_CARD_ID, "\U0001f4b3")  # 💳 premium
 SEPARATOR = CHAT * 11  # Línea separadora de 11 💬
 
 
@@ -100,7 +104,9 @@ def send_hit_photo(chat_id, caption_text):
 
     # ── Último recurso: texto sin tg-emoji ──
     try:
-        clean = caption_text.replace('<tg-emoji emoji-id="' + EMOJI_CHAT_ID + '">', '').replace('</tg-emoji>', '')
+        clean = caption_text
+        for eid in [EMOJI_CHAT_ID, EMOJI_CARD_ID]:
+            clean = clean.replace(f'<tg-emoji emoji-id="{eid}">', '').replace('</tg-emoji>', '')
         bot.send_message(chat_id, clean)
         print(f"{Fore.YELLOW}[!] Texto enviado sin emojis premium{Fore.RESET}")
         return True
@@ -233,13 +239,13 @@ def cmd_testimg(message):
     bot.reply_to(message, "📸 <b>Enviando imagen de prueba al canal...</b>")
     test_caption = f"""<b><i>TEST IMAGE</i></b>
 {SEPARATOR}
-💳 <b>Test</b> ⏩️ <code>4111111111111111|12|2026|123</code>
-{CHAT} <b>Response</b> ⏩️ Approved! ✅
-⚙ <b>Extra</b> ⏩️ <code>411111111111xxxx|12|2026|rnd</code>
+{CARD} <b>Test</b> {ARROW} <code>4111111111111111|12|2026|123</code>
+{CHAT} <b>Response</b> {ARROW} Approved! ✅
+⚙ <b>Extra</b> {ARROW} <code>411111111111xxxx|12|2026|rnd</code>
 {SEPARATOR}
-🗒 <b>Info</b> ⏩️ VISA - CLASSIC - CREDIT
-🏠 <b>Bank</b> ⏩️ TEST BANK
-🌐 <b>Country</b> ⏩️ US 🇺🇸
+🗒 <b>Info</b> {ARROW} VISA - CLASSIC - CREDIT
+🏠 <b>Bank</b> {ARROW} TEST BANK
+🌐 <b>Country</b> {ARROW} US 🇺🇸
 {SEPARATOR}
 👑 <b>Owner</b>  @hjofc20
 """
@@ -342,13 +348,13 @@ async def my_event_handler(event):
     # ── Construir mensaje con emojis premium ──
     new2 = f"""<b><i>HJ SCAM</i> #BIN{bin_num}</b>
 {SEPARATOR}
-💳 <b>Cc</b> ⏩️ <code>{cc}|{mm}|{yy}|{cvv}</code>
-{CHAT} <b>Response</b> ⏩️ Approved! ✅
-⚙ <b>Extra</b> ⏩️ <code>{extra2}xxxx|{mm}|{yy}|rnd</code>
+{CARD} <b>Cc</b> {ARROW} <code>{cc}|{mm}|{yy}|{cvv}</code>
+{CHAT} <b>Response</b> {ARROW} Approved! ✅
+⚙ <b>Extra</b> {ARROW} <code>{extra2}xxxx|{mm}|{yy}|rnd</code>
 {SEPARATOR}
-🗒 <b>Info</b> ⏩️ {brand} - {level} - {type_}
-🏠 <b>Bank</b> ⏩️ {bank}
-🌐 <b>Country</b> ⏩️ {country} {flag}
+🗒 <b>Info</b> {ARROW} {brand} - {level} - {type_}
+🏠 <b>Bank</b> {ARROW} {bank}
+🌐 <b>Country</b> {ARROW} {country} {flag}
 {SEPARATOR}
 👑 <b>Owner</b>  @hjofc20
 """

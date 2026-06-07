@@ -19,7 +19,7 @@ client.parse_mode = 'html'
 
 TokenAthena = "7426061715:AAGuXLGMGVAVMX2POGVifHfVlBeNjUBE6bo"
 id_channel_athena = -1003127906650
-OWNER_ID = 6409869489  # Tu user ID de Telegram para comandos admin
+OWNER_ID = 5947916142 # Tu user ID de Telegram para comandos admin
 REPO_URL = "https://github.com/HacheJotaDev/BotTgGo.git"
 
 bot = telebot.TeleBot(TokenAthena, parse_mode="html")

@@ -1,7 +1,8 @@
 """
-HJ SCAM BOT v8.6 - Pyrogram + Telethon
-Telethon se inicia automaticamente al arrancar
-No usa bot.run() - maneja el loop manualmente
+HJ SCAM BOT v8.7 - Pyrogram + Telethon
+Fix: usar send_photo con caption + caption_entities para canal
+Los emojis premium funcionan en privado pero NO en canales con send_message solo.
+Solucion: enviar foto+texto como un solo mensaje con caption_entities.
 """
 import re
 import requests
@@ -162,6 +163,44 @@ def verificar(ccn):
     except FileNotFoundError:
         return False
 
+# ─── Send to channel helper ───────────────────────────────────────────────────
+async def send_hit_to_channel(txt, ent, img_path=None):
+    """
+    Enviar hit al canal con emojis premium.
+    Usa send_photo con caption + caption_entities para que los premium funcionen en canales.
+    Si no hay imagen, usa send_message con entities como fallback.
+    """
+    try:
+        if img_path and path.isfile(img_path):
+            print(f"[..] Enviando foto+caption premium al canal {CHAN_ID}...")
+            msg = await bot.send_photo(
+                CHAN_ID,
+                img_path,
+                caption=txt,
+                caption_entities=ent
+            )
+            print(f"[OK] Foto+premium enviado al canal! msg_id={msg.id}")
+            return True
+        else:
+            # Sin imagen - enviar texto solo con entities
+            print(f"[..] Enviando texto premium al canal {CHAN_ID}...")
+            msg = await bot.send_message(CHAN_ID, txt, entities=ent)
+            print(f"[OK] Texto premium enviado al canal! msg_id={msg.id}")
+            return True
+    except Exception as e:
+        print(f"[ERR] Envio premium fallo: {e}")
+        # Fallback: intentar sin entities
+        try:
+            if img_path and path.isfile(img_path):
+                await bot.send_photo(CHAN_ID, img_path, caption=txt)
+            else:
+                await bot.send_message(CHAN_ID, txt)
+            print("[WARN] Enviado sin premium (fallback)")
+            return True
+        except Exception as e2:
+            print(f"[ERR] Fallback tambien fallo: {e2}")
+            return False
+
 # ─── Clients ───────────────────────────────────────────────────────────────────
 bot = Client("premium_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -173,7 +212,7 @@ tel_ok = False
 @bot.on_message(filters.command("start") & filters.private)
 async def cmd_start(c, m):
     tel_status = "Conectado" if tel_ok else "Desconectado"
-    await m.reply(f"Bot activo! v8.6\nTelethon: {tel_status}\nComandos: /status /emojis /testimg /connect /update /restart")
+    await m.reply(f"Bot activo! v8.7\nTelethon: {tel_status}\nComandos: /status /emojis /testimg /connect /update /restart")
 
 @bot.on_message(filters.command("status") & filters.private)
 async def cmd_status(c, m):
@@ -188,7 +227,7 @@ async def cmd_status(c, m):
     tel = "Conectado" if tel_ok else "Desconectado"
     ses = "Si" if path.isfile(TEL_SESSION + ".session") else "NO"
     ses_size = path.getsize(TEL_SESSION + ".session") if path.isfile(TEL_SESSION + ".session") else 0
-    await m.reply(f"Bot v8.6\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nSession: {ses} ({ses_size} bytes)\nDir: {SCRIPT_DIR}")
+    await m.reply(f"Bot v8.7\nCommit: {commit}\nImagen: {img}\nTelethon: {tel}\nSession: {ses} ({ses_size} bytes)\nDir: {SCRIPT_DIR}")
 
 @bot.on_message(filters.command("emojis") & filters.private)
 async def cmd_emojis(c, m):
@@ -200,6 +239,19 @@ async def cmd_emojis(c, m):
     except Exception as e:
         await m.reply(f"Error: {e}")
 
+@bot.on_message(filters.command("emojischan") & filters.private)
+async def cmd_emojischan(c, m):
+    """Testear emojis premium en el canal"""
+    if m.from_user.id != OWNER_ID:
+        return
+    await m.reply("Enviando test de emojis al canal...")
+    txt, ent = build_emoji_test()
+    ok = await send_hit_to_channel(txt, ent)
+    if ok:
+        await m.reply("Enviado! Verifica si se ven premium en el canal.")
+    else:
+        await m.reply("Error al enviar al canal.")
+
 @bot.on_message(filters.command("testimg") & filters.private)
 async def cmd_testimg(c, m):
     if m.from_user.id != OWNER_ID:
@@ -207,14 +259,12 @@ async def cmd_testimg(c, m):
     await m.reply("Enviando prueba al canal...")
     txt, ent = build_hit("411111", "4111111111111111", "12", "2026", "123",
                          "411111111111", "VISA", "CLASSIC", "CREDIT", "TEST BANK", "US", "\U0001F1FA\U0001F1F8")
-    try:
-        img = ensure_image()
-        if img and path.isfile(img):
-            await c.send_photo(CHAN_ID, img)
-        await c.send_message(CHAN_ID, txt, entities=ent)
-        await m.reply("Enviado al canal con premium!")
-    except Exception as e:
-        await m.reply(f"Error: {e}")
+    img = ensure_image()
+    ok = await send_hit_to_channel(txt, ent, img)
+    if ok:
+        await m.reply("Enviado al canal! Verifica si se ven premium.")
+    else:
+        await m.reply("Error al enviar al canal.")
 
 @bot.on_message(filters.command("connect") & filters.private)
 async def cmd_connect(c, m):
@@ -354,19 +404,9 @@ async def _start_telethon():
             txt, ent = build_hit(bin_n, cc, mm, yy, cvv, cc[:12], brand, level, tipo, bank, country, flag)
             print(f"[HIT] {cc}|{mm}|{yy}|{cvv} {country}")
 
-            try:
-                img = ensure_image()
-                if img and path.isfile(img):
-                    await bot.send_photo(CHAN_ID, img)
-                await bot.send_message(CHAN_ID, txt, entities=ent)
-                print("[OK] Enviado con premium al canal")
-            except Exception as e:
-                print(f"[ERR] Pyrogram: {e}")
-                try:
-                    await bot.send_message(CHAN_ID, txt)
-                    print("[WARN] Enviado sin premium")
-                except Exception as e2:
-                    print(f"[ERR] Fallback: {e2}")
+            # Enviar usando helper (foto+caption con premium)
+            img = ensure_image()
+            await send_hit_to_channel(txt, ent, img)
 
         tel_ok = True
         print("[OK] Telethon handlers registrados. Escuchando hits...")
@@ -380,11 +420,8 @@ async def _start_telethon():
 if __name__ == "__main__":
     ensure_image()
     print("=" * 40)
-    print("HJ SCAM BOT v8.6")
+    print("HJ SCAM BOT v8.7")
     print("Pyrogram + Telethon")
     print("=" * 40)
-
-    # Usar bot.run() para Pyrogram polling
-    # Telethon se inicia con /connect o /start
     print("[..] Iniciando bot.run()...")
     bot.run()

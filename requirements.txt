@@ -1,12 +1,5 @@
 telethon
 pyrogram
-telebot
-pyTelegramBotAPI
+TgCrypto
 requests
 colorama
-TgCrypto
-urllib3
-bs4
-httpcore
-aiogram
-random_address

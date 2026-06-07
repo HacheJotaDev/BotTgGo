@@ -1,14 +1,38 @@
-from telethon import TelegramClient, events
-from pyrogram import Client, filters
-from pyrogram.types import MessageEntity
-from pyrogram.enums import MessageEntityType
 import re
 import requests
 import asyncio
 import os
 import subprocess
-from colorama import Fore
+import sys
+import signal
 from os import system, path
+
+# ─── Imports con manejo de errores ─────────────────────────────────────────────
+try:
+    from telethon import TelegramClient, events
+    print("[OK] Telethon importado")
+except ImportError as e:
+    print(f"[ERROR] No se pudo importar Telethon: {e}")
+    print("Ejecuta: pip install telethon")
+    sys.exit(1)
+
+try:
+    from pyrogram import Client, filters
+    from pyrogram.types import MessageEntity
+    from pyrogram.enums import MessageEntityType
+    print("[OK] Pyrogram importado")
+except ImportError as e:
+    print(f"[ERROR] No se pudo importar Pyrogram: {e}")
+    print("Ejecuta: pip install pyrogram tgcrypto")
+    sys.exit(1)
+
+try:
+    from colorama import Fore, init
+    init(autoreset=True)
+    print("[OK] Colorama importado")
+except ImportError:
+    class Fore:
+        RED = GREEN = YELLOW = BLUE = WHITE = CYAN = LIGHTWHITE_EX = LIGHTBLUE_EX = RESET = ""
 
 # ─── Config ────────────────────────────────────────────────────────────────────
 api_id = 29009837
@@ -20,44 +44,45 @@ REPO_URL = "https://github.com/HacheJotaDev/BotTgGo.git"
 
 system("clear")
 
-# ─── Clients ───────────────────────────────────────────────────────────────────
-# Telethon: userbot para escuchar canales
-client = TelegramClient('anon', api_id, api_hash)
+# ─── Rutas ─────────────────────────────────────────────────────────────────────
+SCRIPT_DIR = path.dirname(path.abspath(__file__))
+SESSIONS_DIR = path.join(SCRIPT_DIR, "sessions")
+os.makedirs(SESSIONS_DIR, exist_ok=True)
 
-# Pyrogram: bot para enviar mensajes con emojis premium + comandos
-bot = Client("premium_bot", api_id=api_id, api_hash=api_hash, bot_token=BOT_TOKEN)
+TELETHON_SESSION = path.join(SESSIONS_DIR, "anon")
+PYROGRAM_SESSION = path.join(SESSIONS_DIR, "premium_bot")
+
+IMAGE_PATH = path.join(SCRIPT_DIR, "nueva_img.jpg")
+IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
+IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
+TARJETAS_FILE = path.join(SCRIPT_DIR, 'tarjetas.txt')
 
 # ─── Custom Emoji IDs (premium) ───────────────────────────────────────────────
-CHAT_ID  = 5427181942934088912   # 💬
-CARD_ID  = 5927169041595634481   # 💳
-ARROW_ID = 5197375087786874047   # ⏩️
-GLOBE_ID = 5879585266426973039   # 🌐
-HOUSE_ID = 5967822972931542886   # 🏠
-NOTEPAD_ID = 5877597667231534929 # 🗒
+CHAT_ID    = 5427181942934088912   # 💬
+CARD_ID    = 5927169041595634481   # 💳
+ARROW_ID   = 5197375087786874047   # ⏩️
+GLOBE_ID   = 5879585266426973039   # 🌐
+HOUSE_ID   = 5967822972931542886   # 🏠
+NOTEPAD_ID = 5877597667231534929   # 🗒
 
 # Normal emojis (sin premium)
 CROWN = "\U0001f451"    # 👑
 GEAR  = "\u2699\ufe0f"  # ⚙
 
-# Unicode fallbacks
-CHAT_U  = "\U0001f4ac"     # 💬
-CARD_U  = "\U0001f4b3"     # 💳
-ARROW_U = "\u23e9\ufe0f"  # ⏩️
-GLOBE_U = "\U0001f310"    # 🌐
-HOUSE_U = "\U0001f3e0"    # 🏠
-NOTEPAD_U = "\U0001f5d2"  # 🗒
-
-# ─── Imagen ───────────────────────────────────────────────────────────────────
-SCRIPT_DIR = path.dirname(path.abspath(__file__))
-IMAGE_PATH = path.join(SCRIPT_DIR, "nueva_img.jpg")
-IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
-IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
+# Unicode base para los emojis premium
+CHAT_U    = "\U0001f4ac"     # 💬
+CARD_U    = "\U0001f4b3"     # 💳
+ARROW_U   = "\u23e9\ufe0f"  # ⏩️
+GLOBE_U   = "\U0001f310"    # 🌐
+HOUSE_U   = "\U0001f3e0"    # 🏠
+NOTEPAD_U = "\U0001f5d2"    # 🗒
 
 
+# ─── Imagen ────────────────────────────────────────────────────────────────────
 def ensure_image():
     for img_path in [IMAGE_PATH, IMAGE_FALLBACK]:
         if path.isfile(img_path) and path.getsize(img_path) > 500:
-            print(f"{Fore.GREEN}[✓] Imagen: {img_path}{Fore.RESET}")
+            print(f"{Fore.GREEN}[OK] Imagen lista: {img_path}{Fore.RESET}")
             return img_path
     print(f"{Fore.YELLOW}[!] Descargando imagen...{Fore.RESET}")
     try:
@@ -65,10 +90,10 @@ def ensure_image():
         if resp.status_code == 200 and len(resp.content) > 500:
             with open(IMAGE_PATH, 'wb') as f:
                 f.write(resp.content)
-            print(f"{Fore.GREEN}[✓] Descargada{Fore.RESET}")
+            print(f"{Fore.GREEN}[OK] Imagen descargada{Fore.RESET}")
             return IMAGE_PATH
     except Exception as e:
-        print(f"{Fore.RED}[✗] Error: {e}{Fore.RESET}")
+        print(f"{Fore.RED}[ERROR] Descarga imagen: {e}{Fore.RESET}")
     return None
 
 
@@ -155,7 +180,7 @@ def build_hit_message(bin_num, cc, mm, yy, cvv, extra2, brand, level, type_, ban
     b.add("Response", bold=True)
     b.add(" ")
     b.add(ARROW_U, custom_emoji_id=ARROW_ID)
-    b.add(" Approved! ✅")
+    b.add(" Approved! \u2705")
     b.nl()
 
     # ⚙ Extra ⏩️data
@@ -164,6 +189,7 @@ def build_hit_message(bin_num, cc, mm, yy, cvv, extra2, brand, level, type_, ban
     b.add("Extra", bold=True)
     b.add(" ")
     b.add(ARROW_U, custom_emoji_id=ARROW_ID)
+    b.add(" ")
     b.add(f"{extra2}xxxx|{mm}|{yy}|rnd", code=True)
     b.nl()
 
@@ -211,34 +237,32 @@ def build_hit_message(bin_num, cc, mm, yy, cvv, extra2, brand, level, type_, ban
 def build_emoji_test():
     b = MsgBuilder()
     b.add("EMOJI TEST", bold=True, italic=True)
-    b.nl()
-    b.nl()
-    b.add("💬 premium → ", bold=True)
+    b.nl().nl()
+    b.add("Chat premium: ", bold=True)
     b.add(CHAT_U, custom_emoji_id=CHAT_ID)
     b.nl()
-    b.add("💳 premium → ", bold=True)
+    b.add("Card premium: ", bold=True)
     b.add(CARD_U, custom_emoji_id=CARD_ID)
     b.nl()
-    b.add("⏩️ premium → ", bold=True)
+    b.add("Arrow premium: ", bold=True)
     b.add(ARROW_U, custom_emoji_id=ARROW_ID)
     b.nl()
-    b.add("🗒 premium → ", bold=True)
+    b.add("Notepad premium: ", bold=True)
     b.add(NOTEPAD_U, custom_emoji_id=NOTEPAD_ID)
     b.nl()
-    b.add("🏠 premium → ", bold=True)
+    b.add("House premium: ", bold=True)
     b.add(HOUSE_U, custom_emoji_id=HOUSE_ID)
     b.nl()
-    b.add("🌐 premium → ", bold=True)
+    b.add("Globe premium: ", bold=True)
     b.add(GLOBE_U, custom_emoji_id=GLOBE_ID)
     b.nl()
-    b.add("👑 normal → ", bold=True)
+    b.add("Crown normal: ", bold=True)
     b.add(CROWN)
     b.nl()
-    b.add("⚙ normal → ", bold=True)
+    b.add("Gear normal: ", bold=True)
     b.add(GEAR)
-    b.nl()
-    b.nl()
-    b.add("Separador 11x 💬:", bold=True)
+    b.nl().nl()
+    b.add("Separador 11x:", bold=True)
     b.nl()
     b.sep()
     b.nl()
@@ -257,18 +281,30 @@ def build_emoji_test():
     b.add("Response", bold=True)
     b.add(" ")
     b.add(ARROW_U, custom_emoji_id=ARROW_ID)
-    b.add(" Approved! ✅")
+    b.add(" Approved! \u2705")
     return b.build()
 
 
 # ─── Verificar duplicado ──────────────────────────────────────────────────────
 def verificar(ccn):
-    tarjetas_file = path.join(SCRIPT_DIR, 'tarjetas.txt')
     try:
-        with open(tarjetas_file, 'r') as f:
+        with open(TARJETAS_FILE, 'r') as f:
             return ccn in f.read()
     except FileNotFoundError:
         return False
+
+
+# ─── Clients ───────────────────────────────────────────────────────────────────
+# Telethon: userbot para escuchar canales
+client = TelegramClient(TELETHON_SESSION, api_id, api_hash)
+
+# Pyrogram: bot para enviar mensajes con emojis premium + comandos
+bot = Client(
+    PYROGRAM_SESSION,
+    api_id=api_id,
+    api_hash=api_hash,
+    bot_token=BOT_TOKEN
+)
 
 
 # ─── Pyrogram Command Handlers ────────────────────────────────────────────────
@@ -276,10 +312,10 @@ def verificar(ccn):
 @bot.on_message(filters.command("update") & filters.private)
 async def cmd_update(client_pyro, message):
     if message.from_user.id != OWNER_ID:
-        await message.reply("⛔ No tenés permiso.")
+        await message.reply("No tenes permiso.")
         return
 
-    await message.reply("🔄 Actualizando bot desde GitHub...")
+    await message.reply("Actualizando bot desde GitHub...")
 
     try:
         result = subprocess.run(
@@ -290,27 +326,37 @@ async def cmd_update(client_pyro, message):
         output = result.stdout + result.stderr
 
         if "Already up to date" in output or "Already up-to-date" in output:
-            await message.reply("✅ El bot ya está actualizado.")
+            await message.reply("El bot ya esta actualizado.")
             return
 
         if result.returncode != 0:
-            await message.reply(f"❌ Error:\n{output[:1000]}")
+            await message.reply(f"Error git pull:\n{output[:1000]}")
             return
 
+        # Instalar dependencias
         req_file = path.join(SCRIPT_DIR, "requirements.txt")
         if path.isfile(req_file):
-            subprocess.run(["pip", "install", "-r", req_file], capture_output=True, text=True, timeout=60)
+            pip_result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", req_file],
+                capture_output=True, text=True, timeout=120
+            )
+            print(f"Pip install: {pip_result.stdout[-200:] if pip_result.stdout else 'OK'}")
 
         ensure_image()
 
-        await message.reply(f"✅ Actualización correcta.\n🔄 Reiniciando en 3s...\n{output[:500]}")
-        subprocess.Popen(["bash", "-c", f"sleep 3 && cd {SCRIPT_DIR} && python3 main.py"])
+        await message.reply(f"Actualizacion correcta.\nReiniciando en 3s...\n{output[:500]}")
+
+        # Reiniciar
+        subprocess.Popen(
+            ["bash", "-c", f"sleep 3 && cd {SCRIPT_DIR} && {sys.executable} main.py"],
+            start_new_session=True
+        )
         os._exit(0)
 
     except subprocess.TimeoutExpired:
-        await message.reply("❌ Timeout.")
+        await message.reply("Timeout en git pull.")
     except Exception as e:
-        await message.reply(f"❌ Error: {str(e)[:500]}")
+        await message.reply(f"Error: {str(e)[:500]}")
 
 
 @bot.on_message(filters.command("status") & filters.private)
@@ -318,20 +364,36 @@ async def cmd_status(client_pyro, message):
     if message.from_user.id != OWNER_ID:
         return
     try:
-        commit = subprocess.run(["git", "log", "--oneline", "-1"], capture_output=True, text=True, cwd=SCRIPT_DIR)
+        commit = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            capture_output=True, text=True, cwd=SCRIPT_DIR
+        )
         commit_msg = commit.stdout.strip() or "Desconocido"
-    except:
+    except Exception:
         commit_msg = "No disponible"
-    img = "✅ nueva_img.jpg" if path.isfile(IMAGE_PATH) and path.getsize(IMAGE_PATH) > 500 else "⚠️ Fallback"
-    await message.reply(f"📊 Estado del Bot\n\n🔑 Commit: {commit_msg}\n🖼 Imagen: {img}\n📂 Dir: {SCRIPT_DIR}")
+
+    img_status = "nueva_img.jpg" if path.isfile(IMAGE_PATH) and path.getsize(IMAGE_PATH) > 500 else "Fallback"
+    pyro_ok = bot.is_connected if hasattr(bot, 'is_connected') else "??"
+
+    await message.reply(
+        f"Estado del Bot\n\n"
+        f"Commit: {commit_msg}\n"
+        f"Imagen: {img_status}\n"
+        f"Pyrogram: {pyro_ok}\n"
+        f"Dir: {SCRIPT_DIR}\n"
+        f"Python: {sys.executable}"
+    )
 
 
 @bot.on_message(filters.command("restart") & filters.private)
 async def cmd_restart(client_pyro, message):
     if message.from_user.id != OWNER_ID:
         return
-    await message.reply("🔄 Reiniciando...")
-    subprocess.Popen(["bash", "-c", f"sleep 2 && cd {SCRIPT_DIR} && python3 main.py"])
+    await message.reply("Reiniciando en 2s...")
+    subprocess.Popen(
+        ["bash", "-c", f"sleep 2 && cd {SCRIPT_DIR} && {sys.executable} main.py"],
+        start_new_session=True
+    )
     os._exit(0)
 
 
@@ -346,31 +408,29 @@ async def cmd_emojis(client_pyro, message):
             msg_text,
             entities=msg_entities
         )
-        await message.reply("✅ Emojis premium enviados. Si ves animación/color especial, funcionan.")
+        await message.reply("Emojis premium enviados. Si ves animacion/color especial, funcionan.")
     except Exception as e:
-        await message.reply(f"❌ Error: {e}")
+        await message.reply(f"Error enviando emojis: {e}")
 
 
 @bot.on_message(filters.command("testimg") & filters.private)
 async def cmd_testimg(client_pyro, message):
     if message.from_user.id != OWNER_ID:
         return
-    await message.reply("📸 Enviando prueba al canal...")
+    await message.reply("Enviando prueba al canal...")
     msg_text, msg_entities = build_hit_message(
         "411111", "4111111111111111", "12", "2026", "123",
         "411111111111", "VISA", "CLASSIC", "CREDIT",
-        "TEST BANK", "US", "🇺🇸"
+        "TEST BANK", "US", "\U0001F1FA\U0001F1F8"
     )
     try:
-        # Enviar foto
         img = ensure_image()
         if img and path.isfile(img):
             await client_pyro.send_photo(id_channel_athena, img)
-        # Enviar texto premium
         await client_pyro.send_message(id_channel_athena, msg_text, entities=msg_entities)
-        await message.reply("✅ Enviado al canal.")
+        await message.reply("Enviado al canal.")
     except Exception as e:
-        await message.reply(f"❌ Error: {e}")
+        await message.reply(f"Error: {e}")
 
 
 # ─── Telethon Worker: escuchar hits ───────────────────────────────────────────
@@ -382,14 +442,14 @@ async def my_event_handler(event):
 
     responses = [
         'Approved', 'Non VBV', 'Gateway Rejected: avs',
-        '✅✅✅ Approved ✅✅✅', 'Succeeded! 🤑', 'APPROVED',
-        'APPROVED ✅', 'Approved CCN', 'Approved #AUTH! ✅',
-        'Approved ❇️', 'APPROVED ✓', '✅Appr0ved',
-        'Security code incorrect✅', 'CVV2 FAILURE POSSIBLE CVV ⌯ N - AVS: G',
-        'Succeeded!', '𝑨𝒑𝒑𝒓𝒐𝒗𝒆𝒅 𝑪𝒂𝒓𝒅 ✅', '𝑨𝒑𝒑𝒓𝒐𝒗𝒆𝒅',
-        '𝑪𝒉𝒂𝒓𝒈𝒆𝒅 𝟎.𝟐𝟓$', '𝑪𝒉𝒂𝒓𝒈𝒆𝒅 $3 ✅', 'Subscription complete',
-        'CVV LIVE ✅', 'Card Approved CCN/CCV Live', 'incorrect_cvc',
-        'Approved! ✅', 'VIVA ✅'
+        'Approved', 'Succeeded!', 'APPROVED',
+        'APPROVED', 'Approved CCN', 'Approved #AUTH!',
+        'Approved', 'APPROVED', 'Appr0ved',
+        'Security code incorrect', 'CVV2 FAILURE POSSIBLE CVV',
+        'Succeeded!', 'Approved', 'Approved',
+        'Charged', 'Charged', 'Subscription complete',
+        'CVV LIVE', 'Card Approved CCN/CCV Live', 'incorrect_cvc',
+        'Approved!', 'VIVA'
     ]
 
     if not any(response in text for response in responses):
@@ -422,7 +482,7 @@ async def my_event_handler(event):
     if verificar(cc):
         return
 
-    with open(path.join(SCRIPT_DIR, 'tarjetas.txt'), 'a') as d:
+    with open(TARJETAS_FILE, 'a') as d:
         d.write(tarj + "\n")
 
     # Consultar BIN
@@ -430,13 +490,13 @@ async def my_event_handler(event):
     try:
         rs = requests.get(f"https://bins.antipublic.cc/bins/{bin_num}").json()
         country = rs.get("country", "??")
-        flag = rs.get("country_flag", "🏳️")
+        flag = rs.get("country_flag", "\U0001F3F3")
         bank = rs.get("bank", "Unknown")
         brand = rs.get("brand", "Unknown")
         type_ = rs.get("type", "Unknown")
         level = rs.get("level", "Unknown")
-    except:
-        country, flag, bank, brand, type_, level = "??", "🏳️", "Unknown", "Unknown", "Unknown", "Unknown"
+    except Exception:
+        country, flag, bank, brand, type_, level = "??", "\U0001F3F3", "Unknown", "Unknown", "Unknown", "Unknown"
 
     extra2 = cc[0:12]
 
@@ -446,7 +506,7 @@ async def my_event_handler(event):
         brand, level, type_, bank, country, flag
     )
 
-    print(f"\n ✅ {Fore.LIGHTWHITE_EX}#Card: {Fore.LIGHTBLUE_EX}{cc}|{mm}|{yy}|{cvv} {Fore.LIGHTWHITE_EX}/ {country}|{flag}")
+    print(f"\n Card: {cc}|{mm}|{yy}|{cvv} / {country}|{flag}")
 
     # Enviar foto + texto premium via Pyrogram
     try:
@@ -454,43 +514,78 @@ async def my_event_handler(event):
         if img and path.isfile(img):
             await bot.send_photo(id_channel_athena, img)
         await bot.send_message(id_channel_athena, msg_text, entities=msg_entities)
-        print(f"{Fore.GREEN}[✓] Foto+premium enviado{Fore.RESET}")
+        print(f"[OK] Foto+premium enviado")
     except Exception as e:
-        print(f"{Fore.RED}[✗] Error Pyrogram: {e}{Fore.RESET}")
+        print(f"[ERROR] Pyrogram envio: {e}")
         # Fallback sin premium
         try:
             await bot.send_message(id_channel_athena, msg_text)
-            print(f"{Fore.YELLOW}[!] Enviado sin premium{Fore.RESET}")
+            print(f"[WARN] Enviado sin premium")
         except Exception as e2:
-            print(f"{Fore.RED}[✗] Error fallback: {e2}{Fore.RESET}")
+            print(f"[ERROR] Fallback: {e2}")
 
 
-# ─── Iniciar ──────────────────────────────────────────────────────────────────
-
+# ─── Banner ───────────────────────────────────────────────────────────────────
 print(f"""
-{Fore.RED}╔══════════════════════════════════════════╗
-{Fore.RED}║         {Fore.WHITE}HJ SCAM BOT - v8.0{Fore.RED}            ║
-{Fore.RED}╠══════════════════════════════════════════╣
-{Fore.RED}║  {Fore.WHITE}💬 Emojis Premium (Pyrogram){Fore.RED}        ║
-{Fore.RED}║  {Fore.WHITE}📸 Imagen + Texto automático{Fore.RED}        ║
-{Fore.RED}║  {Fore.WHITE}🔄 /update - Actualizar desde TG{Fore.RED}     ║
-{Fore.RED}║  {Fore.WHITE}📊 /status - Ver estado{Fore.RED}              ║
-{Fore.RED}║  {Fore.WHITE}🔁 /restart - Reiniciar bot{Fore.RED}         ║
-{Fore.RED}║  {Fore.WHITE}🖼 /testimg - Probar envío{Fore.RED}          ║
-{Fore.RED}║  {Fore.WHITE}😀 /emojis - Testear emojis premium{Fore.RED}  ║
-{Fore.RED}╚══════════════════════════════════════════╝{Fore.RESET}
+HJ SCAM BOT - v8.1
+  Emojis Premium (Pyrogram)
+  Imagen + Texto automatico
+  /update - Actualizar desde TG
+  /status - Ver estado
+  /restart - Reiniciar bot
+  /testimg - Probar envio
+  /emojis - Testear emojis premium
 """)
 
 ensure_image()
 
 
+# ─── Iniciar ──────────────────────────────────────────────────────────────────
+
 async def main():
-    await bot.start()
-    print(f"{Fore.GREEN}[✓] Pyrogram bot iniciado{Fore.RESET}")
-    await client.start()
-    print(f"{Fore.GREEN}[✓] Telethon userbot iniciado{Fore.RESET}")
-    print(f"{Fore.GREEN}[✓] Todo listo. Escuchando hits...{Fore.RESET}")
-    await client.run_until_disconnected()
+    # 1) Iniciar Pyrogram (bot)
+    try:
+        await bot.start()
+        print("[OK] Pyrogram bot iniciado")
+    except Exception as e:
+        print(f"[ERROR] Pyrogram no inicio: {e}")
+        print("Verifica BOT_TOKEN y que pyrogram este instalado.")
+        sys.exit(1)
+
+    # 2) Iniciar Telethon (userbot)
+    telethon_ok = False
+    try:
+        await client.start()
+        telethon_ok = True
+        print("[OK] Telethon userbot iniciado")
+    except Exception as e:
+        print(f"[WARN] Telethon no inicio: {e}")
+        print("[WARN] El bot funcionara solo para comandos, sin escuchar hits.")
+
+    if telethon_ok:
+        print("[OK] Todo listo. Escuchando hits...")
+        # Mantener ambos clientes corriendo
+        stop_event = asyncio.Event()
+        try:
+            await stop_event.wait()
+        except (KeyboardInterrupt, SystemExit):
+            pass
+    else:
+        print("[OK] Bot en modo solo-comandos. Escuchando...")
+        # Pyrogram sigue corriendo para comandos
+        await bot.idle()
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nBot detenido.")
+    except Exception as e:
+        print(f"\n[ERROR FATAL] {e}")
+        print("Reiniciando en 5s...")
+        subprocess.Popen(
+            ["bash", "-c", f"sleep 5 && cd {SCRIPT_DIR} && {sys.executable} main.py"],
+            start_new_session=True
+        )
+        sys.exit(1)

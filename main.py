@@ -31,16 +31,26 @@ IMAGE_PATH = path.join(SCRIPT_DIR, "nueva_img.jpg")
 IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
 IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
 
+# ─── Custom Emoji IDs (premium) ───────────────────────────────────────────────
+# 💬 emoji premium — ID del custom emoji
+EMOJI_CHAT_ID = "5427181942934088912"
+
+def ce(emoji_id, fallback):
+    """Genera tag tg-emoji para emojis premium personalizados."""
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+# Atajos de emojis premium
+CHAT = ce(EMOJI_CHAT_ID, "\U0001f4ac")  # 💬 premium
+SEPARATOR = CHAT * 11  # Línea separadora de 11 💬
+
 
 def ensure_image():
     """Descarga la imagen con requests si no existe o está corrupta. Retorna la ruta local o None."""
-    # Verificar imagen principal
     for img_path in [IMAGE_PATH, IMAGE_FALLBACK]:
         if path.isfile(img_path) and path.getsize(img_path) > 500:
             print(f"{Fore.GREEN}[✓] Imagen lista: {img_path} ({path.getsize(img_path)} bytes){Fore.RESET}")
             return img_path
 
-    # Descargar con requests (más confiable que curl)
     print(f"{Fore.YELLOW}[!] Descargando imagen desde URL...{Fore.RESET}")
     try:
         resp = requests.get(IMAGE_URL, timeout=20)
@@ -58,43 +68,41 @@ def ensure_image():
 
 
 def send_hit_photo(chat_id, caption_text):
-    """Envía foto+caption al canal con múltiples métodos de fallback."""
+    """Envía foto + texto al canal. Foto primero, texto con emojis premium después."""
     img_local = ensure_image()
 
-    # ── Método 1: Archivo local abierto con open('rb') ──
-    # Este es el método más confiable con pyTelegramBotAPI
-    if img_local and path.isfile(img_local):
-        try:
-            with open(img_local, 'rb') as photo_file:
-                bot.send_photo(chat_id, photo_file, caption=caption_text)
-            print(f"{Fore.GREEN}[✓] Foto enviada (método: archivo local){Fore.RESET}")
-            return True
-        except Exception as e:
-            print(f"{Fore.YELLOW}[!] Error archivo local: {e}{Fore.RESET}")
-
-    # ── Método 2: URL directa ──
-    try:
-        bot.send_photo(chat_id, IMAGE_URL, caption=caption_text)
-        print(f"{Fore.GREEN}[✓] Foto enviada (método: URL){Fore.RESET}")
-        return True
-    except Exception as e:
-        print(f"{Fore.YELLOW}[!] Error con URL: {e}{Fore.RESET}")
-
-    # ── Método 3: Enviar foto sin caption, luego texto separado ──
+    # ── Enviar foto ──
+    photo_sent = False
     if img_local and path.isfile(img_local):
         try:
             with open(img_local, 'rb') as photo_file:
                 bot.send_photo(chat_id, photo_file)
-            bot.send_message(chat_id, caption_text)
-            print(f"{Fore.GREEN}[✓] Foto+texto enviados por separado{Fore.RESET}")
-            return True
+            photo_sent = True
+            print(f"{Fore.GREEN}[✓] Foto enviada{Fore.RESET}")
         except Exception as e:
-            print(f"{Fore.YELLOW}[!] Error foto separada: {e}{Fore.RESET}")
+            print(f"{Fore.YELLOW}[!] Error enviando foto: {e}{Fore.RESET}")
 
-    # ── Último recurso: solo texto ──
+    if not photo_sent:
+        try:
+            bot.send_photo(chat_id, IMAGE_URL)
+            photo_sent = True
+            print(f"{Fore.GREEN}[✓] Foto enviada (URL){Fore.RESET}")
+        except Exception as e:
+            print(f"{Fore.YELLOW}[!] Error con URL de foto: {e}{Fore.RESET}")
+
+    # ── Enviar texto con emojis premium (mensaje separado, sin límite de 1024) ──
     try:
         bot.send_message(chat_id, caption_text)
-        print(f"{Fore.YELLOW}[!] Solo texto enviado (sin imagen){Fore.RESET}")
+        print(f"{Fore.GREEN}[✓] Texto premium enviado{Fore.RESET}")
+        return True
+    except Exception as e:
+        print(f"{Fore.RED}[✗] Error enviando texto: {e}{Fore.RESET}")
+
+    # ── Último recurso: texto sin tg-emoji ──
+    try:
+        clean = caption_text.replace('<tg-emoji emoji-id="' + EMOJI_CHAT_ID + '">', '').replace('</tg-emoji>', '')
+        bot.send_message(chat_id, clean)
+        print(f"{Fore.YELLOW}[!] Texto enviado sin emojis premium{Fore.RESET}")
         return True
     except Exception as e:
         print(f"{Fore.RED}[✗] Error enviando mensaje: {e}{Fore.RESET}")
@@ -223,7 +231,18 @@ def cmd_testimg(message):
         return
 
     bot.reply_to(message, "📸 <b>Enviando imagen de prueba al canal...</b>")
-    test_caption = "<b><i>TEST IMAGE</i></b>\n✅ Si ves imagen + este texto, funciona perfecto."
+    test_caption = f"""<b><i>TEST IMAGE</i></b>
+{SEPARATOR}
+💳 <b>Test</b> ⏩️ <code>4111111111111111|12|2026|123</code>
+{CHAT} <b>Response</b> ⏩️ Approved! ✅
+⚙ <b>Extra</b> ⏩️ <code>411111111111xxxx|12|2026|rnd</code>
+{SEPARATOR}
+🗒 <b>Info</b> ⏩️ VISA - CLASSIC - CREDIT
+🏠 <b>Bank</b> ⏩️ TEST BANK
+🌐 <b>Country</b> ⏩️ US 🇺🇸
+{SEPARATOR}
+👑 <b>Owner</b>  @hjofc20
+"""
 
     ok = send_hit_photo(id_channel_athena, test_caption)
     if ok:
@@ -320,18 +339,18 @@ async def my_event_handler(event):
     except:
         name, lastname, street, complement = "Name", "Last", "Street", "123"
 
-    # ── Construir mensaje ──
+    # ── Construir mensaje con emojis premium ──
     new2 = f"""<b><i>HJ SCAM</i> #BIN{bin_num}</b>
-<b>- - - - - - - - - - - - - - - - - - - - - - - -</b>
-<b>Cc</b> ➸ <code>{cc}|{mm}|{yy}|{cvv}</code>
-<b>Response</b> ➸ Approved! ✅ 
-<b>Extra</> ➸ <code>{extra2}xxxx|{mm}|{yy}|rnd</code>
-<b>- - - - - - - - - - - - - - - - - - - - - - - -</b>
-<b>Info</b> ➸ {brand} - {level} - {type_}
-<b>Bank</b> ➸ {bank}
-<b>Country</b> ➸ {country} {flag}
-<b>- - - - - - - - - - - - - - - - - - - - - - - -</b>
-<b>Owner</b> ➸ @hjofc123
+{SEPARATOR}
+💳 <b>Cc</b> ⏩️ <code>{cc}|{mm}|{yy}|{cvv}</code>
+{CHAT} <b>Response</b> ⏩️ Approved! ✅
+⚙ <b>Extra</b> ⏩️ <code>{extra2}xxxx|{mm}|{yy}|rnd</code>
+{SEPARATOR}
+🗒 <b>Info</b> ⏩️ {brand} - {level} - {type_}
+🏠 <b>Bank</b> ⏩️ {bank}
+🌐 <b>Country</b> ⏩️ {country} {flag}
+{SEPARATOR}
+👑 <b>Owner</b>  @hjofc20
 """
 
     print(f"\n ✅ {Fore.LIGHTWHITE_EX}#Card Tested: {Fore.LIGHTBLUE_EX}{cc}|{mm}|{yy}|{cvv} {Fore.LIGHTWHITE_EX}/ {country}|{flag}\n"
@@ -345,9 +364,10 @@ async def my_event_handler(event):
 
 print(f"""
 {Fore.RED}╔══════════════════════════════════════════╗
-{Fore.RED}║         {Fore.WHITE}HJ SCAM BOT - v3.0{Fore.RED}            ║
+{Fore.RED}║         {Fore.WHITE}HJ SCAM BOT - v4.0{Fore.RED}            ║
 {Fore.RED}╠══════════════════════════════════════════╣
-{Fore.RED}║  {Fore.WHITE}📸 Imagen + Texto (robusto){Fore.RED}          ║
+{Fore.RED}║  {Fore.WHITE}💬 Emojis Premium activados{Fore.RED}          ║
+{Fore.RED}║  {Fore.WHITE}📸 Imagen + Texto automático{Fore.RED}        ║
 {Fore.RED}║  {Fore.WHITE}🔄 /update - Actualizar desde TG{Fore.RED}     ║
 {Fore.RED}║  {Fore.WHITE}📊 /status - Ver estado del bot{Fore.RED}     ║
 {Fore.RED}║  {Fore.WHITE}🔁 /restart - Reiniciar bot{Fore.RED}         ║

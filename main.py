@@ -39,8 +39,6 @@ id_channel_athena = -1003127906650
 OWNER_ID = 5947916142
 REPO_URL = "https://github.com/HacheJotaDev/BotTgGo.git"
 
-system("clear")
-
 # ─── Rutas ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = path.dirname(path.abspath(__file__))
 IMAGE_PATH = path.join(SCRIPT_DIR, "nueva_img.jpg")
@@ -48,9 +46,8 @@ IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
 IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
 TARJETAS_FILE = path.join(SCRIPT_DIR, 'tarjetas.txt')
 
-# Telethon session - buscar la existente primero
-TELETHON_SESSION = path.join(SCRIPT_DIR, "anon")  # ruta original
-# Pyrogram session
+# Sesiones - usar las rutas originales
+TELETHON_SESSION = path.join(SCRIPT_DIR, "anon")
 PYROGRAM_SESSION = path.join(SCRIPT_DIR, "premium_bot")
 
 # ─── Custom Emoji IDs (premium) ───────────────────────────────────────────────
@@ -78,18 +75,18 @@ NOTEPAD_U = "\U0001f5d2"    # 🗒
 def ensure_image():
     for img_path in [IMAGE_PATH, IMAGE_FALLBACK]:
         if path.isfile(img_path) and path.getsize(img_path) > 500:
-            print(f"{Fore.GREEN}[OK] Imagen lista: {img_path}{Fore.RESET}")
+            print(f"[OK] Imagen lista: {img_path}")
             return img_path
-    print(f"{Fore.YELLOW}[!] Descargando imagen...{Fore.RESET}")
+    print("[!] Descargando imagen...")
     try:
         resp = requests.get(IMAGE_URL, timeout=20)
         if resp.status_code == 200 and len(resp.content) > 500:
             with open(IMAGE_PATH, 'wb') as f:
                 f.write(resp.content)
-            print(f"{Fore.GREEN}[OK] Imagen descargada{Fore.RESET}")
+            print("[OK] Imagen descargada")
             return IMAGE_PATH
     except Exception as e:
-        print(f"{Fore.RED}[ERROR] Descarga imagen: {e}{Fore.RESET}")
+        print(f"[ERROR] Descarga imagen: {e}")
     return None
 
 
@@ -291,8 +288,8 @@ def verificar(ccn):
 
 
 # ─── Clients ───────────────────────────────────────────────────────────────────
-# Telethon: userbot para escuchar canales (usar sesion existente)
-client = TelegramClient(TELETHON_SESSION, api_id, api_hash)
+# Telethon: userbot para escuchar canales
+telethon_client = TelegramClient(TELETHON_SESSION, api_id, api_hash)
 
 # Pyrogram: bot para enviar mensajes con emojis premium + comandos
 bot = Client(
@@ -332,22 +329,17 @@ async def cmd_update(client_pyro, message):
         # Instalar dependencias
         req_file = path.join(SCRIPT_DIR, "requirements.txt")
         if path.isfile(req_file):
-            pip_result = subprocess.run(
+            subprocess.run(
                 [sys.executable, "-m", "pip", "install", "-r", req_file],
                 capture_output=True, text=True, timeout=120
             )
-            print(f"Pip install: {pip_result.stdout[-200:] if pip_result.stdout else 'OK'}")
 
         ensure_image()
 
         await message.reply(f"Actualizacion correcta.\nReiniciando en 3s...\n{output[:500]}")
 
-        # Reiniciar
-        subprocess.Popen(
-            ["bash", "-c", f"sleep 3 && cd {SCRIPT_DIR} && {sys.executable} main.py"],
-            start_new_session=True
-        )
-        os._exit(0)
+        # Reiniciar via systemctl
+        subprocess.Popen(["sudo", "systemctl", "restart", "bot-tg"])
 
     except subprocess.TimeoutExpired:
         await message.reply("Timeout en git pull.")
@@ -383,12 +375,8 @@ async def cmd_status(client_pyro, message):
 async def cmd_restart(client_pyro, message):
     if message.from_user.id != OWNER_ID:
         return
-    await message.reply("Reiniciando en 2s...")
-    subprocess.Popen(
-        ["bash", "-c", f"sleep 2 && cd {SCRIPT_DIR} && {sys.executable} main.py"],
-        start_new_session=True
-    )
-    os._exit(0)
+    await message.reply("Reiniciando...")
+    subprocess.Popen(["sudo", "systemctl", "restart", "bot-tg"])
 
 
 @bot.on_message(filters.command("emojis") & filters.private)
@@ -429,8 +417,8 @@ async def cmd_testimg(client_pyro, message):
 
 # ─── Telethon Worker: escuchar hits ───────────────────────────────────────────
 
-@client.on(events.NewMessage)
-@client.on(events.MessageEdited)
+@telethon_client.on(events.NewMessage)
+@telethon_client.on(events.MessageEdited)
 async def my_event_handler(event):
     text = event.raw_text
 
@@ -507,20 +495,19 @@ async def my_event_handler(event):
         if img and path.isfile(img):
             await bot.send_photo(id_channel_athena, img)
         await bot.send_message(id_channel_athena, msg_text, entities=msg_entities)
-        print(f"[OK] Foto+premium enviado")
+        print("[OK] Foto+premium enviado")
     except Exception as e:
         print(f"[ERROR] Pyrogram envio: {e}")
-        # Fallback sin premium
         try:
             await bot.send_message(id_channel_athena, msg_text)
-            print(f"[WARN] Enviado sin premium")
+            print("[WARN] Enviado sin premium")
         except Exception as e2:
             print(f"[ERROR] Fallback: {e2}")
 
 
 # ─── Banner ───────────────────────────────────────────────────────────────────
 print(f"""
-HJ SCAM BOT - v8.2
+HJ SCAM BOT - v8.3
   Emojis Premium (Pyrogram)
   Imagen + Texto automatico
   /update - Actualizar desde TG
@@ -535,48 +522,25 @@ ensure_image()
 
 # ─── Iniciar ──────────────────────────────────────────────────────────────────
 
-async def main():
-    # 1) Iniciar Pyrogram (bot)
-    try:
-        await bot.start()
-        print("[OK] Pyrogram bot iniciado")
-    except Exception as e:
-        print(f"[ERROR] Pyrogram no inicio: {e}")
-        sys.exit(1)
-
-    # 2) Iniciar Telethon (userbot) - NO pedir interactivamente
+async def startup():
+    """Iniciar Telethon antes de que Pyrogram tome el control del loop"""
     telethon_ok = False
     if path.isfile(TELETHON_SESSION + ".session"):
         try:
-            await client.start()
+            await telethon_client.start()
             telethon_ok = True
             print("[OK] Telethon userbot iniciado")
         except Exception as e:
             print(f"[WARN] Telethon no inicio: {e}")
-            print("[WARN] Bot funcionara sin escuchar hits.")
     else:
         print("[WARN] No hay sesion de Telethon. Bot sin escuchar hits.")
-        print("[WARN] Para activar Telethon, ejecuta manualmente una vez:")
-        print(f"[WARN]   cd {SCRIPT_DIR} && {sys.executable} -c \"from telethon import TelegramClient; client=TelegramClient('anon',{api_id},'{api_hash}'); client.start()\"")
 
     if telethon_ok:
         print("[OK] Todo listo. Escuchando hits...")
-
-    # Mantener el bot corriendo (compatible con Pyrogram 2.0)
-    stop_event = asyncio.Event()
-    try:
-        await stop_event.wait()
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    else:
+        print("[OK] Bot en modo comandos.")
 
 
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nBot detenido.")
-    except Exception as e:
-        print(f"\n[ERROR FATAL] {e}")
-        # No reiniciar automaticamente para evitar loop infinito de crashes
-        # systemctl se encarga del restart
-        sys.exit(1)
+# Usar bot.run() de Pyrogram - esto maneja el event loop y polling correctamente
+# El handler startup() se ejecuta despues de que Pyrogram se conecta
+bot.run(startup())

@@ -4,7 +4,6 @@ import asyncio
 import os
 import subprocess
 import sys
-import signal
 from os import system, path
 
 # ─── Imports con manejo de errores ─────────────────────────────────────────────
@@ -13,7 +12,6 @@ try:
     print("[OK] Telethon importado")
 except ImportError as e:
     print(f"[ERROR] No se pudo importar Telethon: {e}")
-    print("Ejecuta: pip install telethon")
     sys.exit(1)
 
 try:
@@ -23,7 +21,6 @@ try:
     print("[OK] Pyrogram importado")
 except ImportError as e:
     print(f"[ERROR] No se pudo importar Pyrogram: {e}")
-    print("Ejecuta: pip install pyrogram tgcrypto")
     sys.exit(1)
 
 try:
@@ -46,16 +43,15 @@ system("clear")
 
 # ─── Rutas ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = path.dirname(path.abspath(__file__))
-SESSIONS_DIR = path.join(SCRIPT_DIR, "sessions")
-os.makedirs(SESSIONS_DIR, exist_ok=True)
-
-TELETHON_SESSION = path.join(SESSIONS_DIR, "anon")
-PYROGRAM_SESSION = path.join(SESSIONS_DIR, "premium_bot")
-
 IMAGE_PATH = path.join(SCRIPT_DIR, "nueva_img.jpg")
 IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
 IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
 TARJETAS_FILE = path.join(SCRIPT_DIR, 'tarjetas.txt')
+
+# Telethon session - buscar la existente primero
+TELETHON_SESSION = path.join(SCRIPT_DIR, "anon")  # ruta original
+# Pyrogram session
+PYROGRAM_SESSION = path.join(SCRIPT_DIR, "premium_bot")
 
 # ─── Custom Emoji IDs (premium) ───────────────────────────────────────────────
 CHAT_ID    = 5427181942934088912   # 💬
@@ -295,7 +291,7 @@ def verificar(ccn):
 
 
 # ─── Clients ───────────────────────────────────────────────────────────────────
-# Telethon: userbot para escuchar canales
+# Telethon: userbot para escuchar canales (usar sesion existente)
 client = TelegramClient(TELETHON_SESSION, api_id, api_hash)
 
 # Pyrogram: bot para enviar mensajes con emojis premium + comandos
@@ -373,13 +369,11 @@ async def cmd_status(client_pyro, message):
         commit_msg = "No disponible"
 
     img_status = "nueva_img.jpg" if path.isfile(IMAGE_PATH) and path.getsize(IMAGE_PATH) > 500 else "Fallback"
-    pyro_ok = bot.is_connected if hasattr(bot, 'is_connected') else "??"
 
     await message.reply(
         f"Estado del Bot\n\n"
         f"Commit: {commit_msg}\n"
         f"Imagen: {img_status}\n"
-        f"Pyrogram: {pyro_ok}\n"
         f"Dir: {SCRIPT_DIR}\n"
         f"Python: {sys.executable}"
     )
@@ -442,12 +436,11 @@ async def my_event_handler(event):
 
     responses = [
         'Approved', 'Non VBV', 'Gateway Rejected: avs',
-        'Approved', 'Succeeded!', 'APPROVED',
-        'APPROVED', 'Approved CCN', 'Approved #AUTH!',
-        'Approved', 'APPROVED', 'Appr0ved',
+        'Succeeded!', 'APPROVED',
+        'Approved CCN', 'Approved #AUTH!',
+        'Appr0ved',
         'Security code incorrect', 'CVV2 FAILURE POSSIBLE CVV',
-        'Succeeded!', 'Approved', 'Approved',
-        'Charged', 'Charged', 'Subscription complete',
+        'Subscription complete',
         'CVV LIVE', 'Card Approved CCN/CCV Live', 'incorrect_cvc',
         'Approved!', 'VIVA'
     ]
@@ -527,7 +520,7 @@ async def my_event_handler(event):
 
 # ─── Banner ───────────────────────────────────────────────────────────────────
 print(f"""
-HJ SCAM BOT - v8.1
+HJ SCAM BOT - v8.2
   Emojis Premium (Pyrogram)
   Imagen + Texto automatico
   /update - Actualizar desde TG
@@ -549,31 +542,32 @@ async def main():
         print("[OK] Pyrogram bot iniciado")
     except Exception as e:
         print(f"[ERROR] Pyrogram no inicio: {e}")
-        print("Verifica BOT_TOKEN y que pyrogram este instalado.")
         sys.exit(1)
 
-    # 2) Iniciar Telethon (userbot)
+    # 2) Iniciar Telethon (userbot) - NO pedir interactivamente
     telethon_ok = False
-    try:
-        await client.start()
-        telethon_ok = True
-        print("[OK] Telethon userbot iniciado")
-    except Exception as e:
-        print(f"[WARN] Telethon no inicio: {e}")
-        print("[WARN] El bot funcionara solo para comandos, sin escuchar hits.")
+    if path.isfile(TELETHON_SESSION + ".session"):
+        try:
+            await client.start()
+            telethon_ok = True
+            print("[OK] Telethon userbot iniciado")
+        except Exception as e:
+            print(f"[WARN] Telethon no inicio: {e}")
+            print("[WARN] Bot funcionara sin escuchar hits.")
+    else:
+        print("[WARN] No hay sesion de Telethon. Bot sin escuchar hits.")
+        print("[WARN] Para activar Telethon, ejecuta manualmente una vez:")
+        print(f"[WARN]   cd {SCRIPT_DIR} && {sys.executable} -c \"from telethon import TelegramClient; client=TelegramClient('anon',{api_id},'{api_hash}'); client.start()\"")
 
     if telethon_ok:
         print("[OK] Todo listo. Escuchando hits...")
-        # Mantener ambos clientes corriendo
-        stop_event = asyncio.Event()
-        try:
-            await stop_event.wait()
-        except (KeyboardInterrupt, SystemExit):
-            pass
-    else:
-        print("[OK] Bot en modo solo-comandos. Escuchando...")
-        # Pyrogram sigue corriendo para comandos
-        await bot.idle()
+
+    # Mantener el bot corriendo (compatible con Pyrogram 2.0)
+    stop_event = asyncio.Event()
+    try:
+        await stop_event.wait()
+    except (KeyboardInterrupt, SystemExit):
+        pass
 
 
 if __name__ == "__main__":
@@ -583,9 +577,6 @@ if __name__ == "__main__":
         print("\nBot detenido.")
     except Exception as e:
         print(f"\n[ERROR FATAL] {e}")
-        print("Reiniciando en 5s...")
-        subprocess.Popen(
-            ["bash", "-c", f"sleep 5 && cd {SCRIPT_DIR} && {sys.executable} main.py"],
-            start_new_session=True
-        )
+        # No reiniciar automaticamente para evitar loop infinito de crashes
+        # systemctl se encarga del restart
         sys.exit(1)

